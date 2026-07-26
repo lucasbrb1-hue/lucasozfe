@@ -1,0 +1,7 @@
+# Este projeto usa apenas a biblioteca padrão do Python (tkinter) em tempo de
+# execução - nenhuma dependência externa é necessária para rodar via
+# `python3 main.py` (desde que o pacote tkinter do seu sistema/Python esteja
+# instalado: Ubuntu/Debian -> `sudo apt install python3-tk`).
+#
+# A dependência abaixo é necessária apenas para GERAR o executável standalone.
+pyinstaller>=6.0
