@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import csv
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import depth_solver as ds
 from . import report as report_mod
+from .ai_extraction import AIExtractionError, ExtractedReading, ExtractedSPTReport
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
 from .reinforcement import STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
-from .soil_data import soil_options
+from .soil_data import get_soil, soil_options
 
 METHOD_LABELS = {
     ds.METHOD_DQ: "Décourt-Quaresma",
@@ -31,6 +33,10 @@ class SPTPilesApp(ttk.Frame):
         self._soil_labels = [label for _, label in self._soil_options]
         self._soil_key_by_label = {label: key for key, label in self._soil_options}
 
+        self.ai_pdf_path: str | None = None
+        self.ai_extraction_result: ExtractedSPTReport | None = None
+        self.ai_review_rows: list[ExtractedReading] = []
+
         self.pack(fill="both", expand=True)
         self._build_widgets()
 
@@ -40,16 +46,19 @@ class SPTPilesApp(ttk.Frame):
         notebook.pack(fill="both", expand=True, padx=8, pady=8)
 
         self.tab_profile = ttk.Frame(notebook)
+        self.tab_ai = ttk.Frame(notebook)
         self.tab_pile = ttk.Frame(notebook)
         self.tab_results = ttk.Frame(notebook)
         self.tab_reinforcement = ttk.Frame(notebook)
 
         notebook.add(self.tab_profile, text="1. Perfil SPT")
-        notebook.add(self.tab_pile, text="2. Estaca e Carga")
-        notebook.add(self.tab_results, text="3. Resultados")
-        notebook.add(self.tab_reinforcement, text="4. Armação")
+        notebook.add(self.tab_ai, text="2. Importar Laudo (IA)")
+        notebook.add(self.tab_pile, text="3. Estaca e Carga")
+        notebook.add(self.tab_results, text="4. Resultados")
+        notebook.add(self.tab_reinforcement, text="5. Armação")
 
         self._build_tab_profile()
+        self._build_tab_ai()
         self._build_tab_pile()
         self._build_tab_results()
         self._build_tab_reinforcement()
@@ -102,6 +111,14 @@ class SPTPilesApp(ttk.Frame):
         ttk.Button(buttons, text="Limpar tudo", command=self._clear_profile).pack(side="left", padx=6)
         ttk.Button(buttons, text="Carregar CSV...", command=self._load_csv).pack(side="left", padx=6)
         ttk.Button(buttons, text="Salvar CSV...", command=self._save_csv).pack(side="left", padx=6)
+
+        water_frame = ttk.Frame(frame)
+        water_frame.pack(fill="x", padx=8, pady=(8, 4))
+        ttk.Label(water_frame, text="Nível d'água (N.A.), em m [deixe em branco se seco/não identificado]:").pack(
+            side="left"
+        )
+        self.entry_water_table = ttk.Entry(water_frame, width=10)
+        self.entry_water_table.pack(side="left", padx=6)
 
     def _add_spt_row(self) -> None:
         try:
@@ -169,7 +186,211 @@ class SPTPilesApp(ttk.Frame):
             for p in self.profile.points:
                 writer.writerow([p.depth_m, p.n_spt, p.soil_key])
 
-    # -- Tab 2: Estaca e carga ---------------------------------------------
+    def _get_water_table(self) -> tuple[bool, float | None]:
+        text = self.entry_water_table.get().strip()
+        if not text:
+            return False, None
+        try:
+            return True, float(text.replace(",", "."))
+        except ValueError:
+            return False, None
+
+    # -- Tab 2: Importar laudo SPT via IA -----------------------------------
+    def _build_tab_ai(self) -> None:
+        frame = self.tab_ai
+
+        info = ttk.Label(
+            frame,
+            text=(
+                "Envie o PDF do laudo de sondagem SPT para a IA (Claude) interpretar: profundidade, "
+                "N-SPT, tipo de solo e nível d'água. Requer a variável de ambiente ANTHROPIC_API_KEY "
+                "configurada antes de abrir o programa. Os dados extraídos SEMPRE aparecem abaixo para "
+                "revisão e correção manual antes de serem importados para o Perfil SPT (aba 1)."
+            ),
+            wraplength=900,
+            justify="left",
+        )
+        info.pack(fill="x", padx=8, pady=8)
+
+        top = ttk.Frame(frame)
+        top.pack(fill="x", padx=8, pady=4)
+        ttk.Button(top, text="Selecionar PDF do laudo...", command=self._select_ai_pdf).pack(side="left")
+        self.label_ai_pdf = ttk.Label(top, text="Nenhum arquivo selecionado.")
+        self.label_ai_pdf.pack(side="left", padx=8)
+
+        self.button_ai_run = ttk.Button(top, text="Interpretar com IA", command=self._run_ai_extraction)
+        self.button_ai_run.pack(side="left", padx=12)
+
+        self.label_ai_status = ttk.Label(frame, text="")
+        self.label_ai_status.pack(fill="x", padx=8)
+
+        water_frame = ttk.Frame(frame)
+        water_frame.pack(fill="x", padx=8, pady=4)
+        ttk.Label(water_frame, text="Nível d'água identificado pela IA (m):").pack(side="left")
+        self.label_ai_water = ttk.Label(water_frame, text="-")
+        self.label_ai_water.pack(side="left", padx=6)
+
+        columns = ("depth", "nspt", "soil", "original")
+        self.tree_ai = ttk.Treeview(frame, columns=columns, show="headings", height=10)
+        self.tree_ai.heading("depth", text="Profundidade (m)")
+        self.tree_ai.heading("nspt", text="N-SPT")
+        self.tree_ai.heading("soil", text="Solo (classificado pela IA)")
+        self.tree_ai.heading("original", text="Descrição original do laudo")
+        self.tree_ai.column("depth", width=110, anchor="center")
+        self.tree_ai.column("nspt", width=70, anchor="center")
+        self.tree_ai.column("soil", width=200, anchor="center")
+        self.tree_ai.column("original", width=300, anchor="w")
+        self.tree_ai.pack(fill="both", expand=True, padx=8, pady=4)
+
+        edit_form = ttk.Frame(frame)
+        edit_form.pack(fill="x", padx=8, pady=4)
+        ttk.Label(edit_form, text="Editar linha selecionada -> Prof.(m):").pack(side="left")
+        self.entry_ai_edit_depth = ttk.Entry(edit_form, width=8)
+        self.entry_ai_edit_depth.pack(side="left", padx=2)
+        ttk.Label(edit_form, text="N-SPT:").pack(side="left")
+        self.entry_ai_edit_nspt = ttk.Entry(edit_form, width=6)
+        self.entry_ai_edit_nspt.pack(side="left", padx=2)
+        ttk.Label(edit_form, text="Solo:").pack(side="left")
+        self.combo_ai_edit_soil = ttk.Combobox(edit_form, values=self._soil_labels, width=20, state="readonly")
+        self.combo_ai_edit_soil.pack(side="left", padx=2)
+        ttk.Button(edit_form, text="Aplicar correção", command=self._apply_ai_row_edit).pack(side="left", padx=6)
+        self.tree_ai.bind("<<TreeviewSelect>>", self._on_ai_row_select)
+
+        bottom = ttk.Frame(frame)
+        bottom.pack(fill="x", padx=8, pady=8)
+        ttk.Button(bottom, text="Remover linha selecionada", command=self._remove_ai_row).pack(side="left")
+        ttk.Button(
+            bottom,
+            text="Confirmar e importar para o Perfil SPT",
+            command=self._confirm_ai_import,
+        ).pack(side="left", padx=12)
+
+    def _select_ai_pdf(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")])
+        if not path:
+            return
+        self.ai_pdf_path = path
+        self.label_ai_pdf.config(text=path)
+
+    def _run_ai_extraction(self) -> None:
+        if not self.ai_pdf_path:
+            messagebox.showinfo("Selecione um PDF", "Selecione o arquivo PDF do laudo SPT primeiro.")
+            return
+
+        self.button_ai_run.config(state="disabled")
+        self.label_ai_status.config(text="Processando com IA... isso pode levar até 1 minuto.", foreground="#1a6fd6")
+
+        def worker() -> None:
+            try:
+                from .ai_extraction import extract_spt_report
+
+                result = extract_spt_report(self.ai_pdf_path)
+            except AIExtractionError as exc:
+                self.after(0, lambda: self._on_ai_extraction_error(str(exc)))
+                return
+            except Exception as exc:  # noqa: BLE001
+                self.after(0, lambda: self._on_ai_extraction_error(f"Erro inesperado: {exc}"))
+                return
+            self.after(0, lambda: self._on_ai_extraction_done(result))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_ai_extraction_error(self, message: str) -> None:
+        self.button_ai_run.config(state="normal")
+        self.label_ai_status.config(text="", foreground="black")
+        messagebox.showerror("Erro na interpretação por IA", message)
+
+    def _on_ai_extraction_done(self, result: ExtractedSPTReport) -> None:
+        self.button_ai_run.config(state="normal")
+        self.label_ai_status.config(
+            text=f"{len(result.readings)} leituras extraídas. Revise cuidadosamente antes de importar.",
+            foreground="#0a6e0a",
+        )
+        self.ai_extraction_result = result
+        self.ai_review_rows = list(result.readings)
+        if result.water_table_found and result.water_table_depth_m is not None:
+            self.label_ai_water.config(text=f"{result.water_table_depth_m:.2f} m")
+        elif result.water_table_found:
+            self.label_ai_water.config(text="identificado, profundidade não especificada")
+        else:
+            self.label_ai_water.config(text="não identificado / seco")
+        self._refresh_ai_tree()
+
+    def _refresh_ai_tree(self) -> None:
+        self.tree_ai.delete(*self.tree_ai.get_children())
+        for i, r in enumerate(self.ai_review_rows):
+            self.tree_ai.insert(
+                "",
+                "end",
+                iid=str(i),
+                values=(f"{r.depth_m:.2f}", r.n_spt, get_soil(r.soil_key).label, r.soil_description_original),
+            )
+
+    def _on_ai_row_select(self, _event=None) -> None:
+        selected = self.tree_ai.selection()
+        if not selected:
+            return
+        idx = int(selected[0])
+        row = self.ai_review_rows[idx]
+        self.entry_ai_edit_depth.delete(0, tk.END)
+        self.entry_ai_edit_depth.insert(0, f"{row.depth_m:.2f}")
+        self.entry_ai_edit_nspt.delete(0, tk.END)
+        self.entry_ai_edit_nspt.insert(0, str(row.n_spt))
+        self.combo_ai_edit_soil.set(get_soil(row.soil_key).label)
+
+    def _apply_ai_row_edit(self) -> None:
+        selected = self.tree_ai.selection()
+        if not selected:
+            messagebox.showinfo("Nenhuma linha selecionada", "Selecione uma linha na tabela para editar.")
+            return
+        idx = int(selected[0])
+        try:
+            depth = float(self.entry_ai_edit_depth.get().replace(",", "."))
+            n_spt = int(float(self.entry_ai_edit_nspt.get().replace(",", ".")))
+            soil_label = self.combo_ai_edit_soil.get()
+            soil_key = self._soil_key_by_label[soil_label]
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("Entrada inválida", str(exc))
+            return
+        original = self.ai_review_rows[idx].soil_description_original
+        self.ai_review_rows[idx] = ExtractedReading(depth, n_spt, soil_key, original)
+        self._refresh_ai_tree()
+
+    def _remove_ai_row(self) -> None:
+        selected = self.tree_ai.selection()
+        if not selected:
+            return
+        idx_to_remove = {int(i) for i in selected}
+        self.ai_review_rows = [r for i, r in enumerate(self.ai_review_rows) if i not in idx_to_remove]
+        self._refresh_ai_tree()
+
+    def _confirm_ai_import(self) -> None:
+        if not self.ai_review_rows:
+            messagebox.showinfo("Nada para importar", "Interprete um laudo e revise as linhas extraídas primeiro.")
+            return
+        if self.profile.points:
+            if not messagebox.askyesno(
+                "Substituir perfil atual?",
+                "Isso vai substituir o perfil de SPT atual (aba 1) pelos dados revisados da IA. Continuar?",
+            ):
+                return
+        new_profile = SPTProfile()
+        for r in self.ai_review_rows:
+            new_profile.add(r.depth_m, r.n_spt, r.soil_key)
+        self.profile = new_profile
+        self._refresh_profile_tree()
+
+        if self.ai_extraction_result is not None and self.ai_extraction_result.water_table_found:
+            self.entry_water_table.delete(0, tk.END)
+            if self.ai_extraction_result.water_table_depth_m is not None:
+                self.entry_water_table.insert(0, f"{self.ai_extraction_result.water_table_depth_m:.2f}")
+
+        messagebox.showinfo(
+            "Perfil importado",
+            "Perfil de SPT atualizado com os dados revisados da IA. Confira a aba 1 antes de calcular.",
+        )
+
+    # -- Tab 3: Estaca e carga ---------------------------------------------
     def _build_tab_pile(self) -> None:
         frame = self.tab_pile
         grid = ttk.Frame(frame)
@@ -255,9 +476,16 @@ class SPTPilesApp(ttk.Frame):
         self.canvas_chart = tk.Canvas(frame, height=180, background="white")
         self.canvas_chart.pack(fill="x", padx=8, pady=8)
 
-        ttk.Button(frame, text="Exportar relatório (.txt)", command=self._export_report).pack(
-            padx=8, pady=6, anchor="w"
+        export_frame = ttk.Frame(frame)
+        export_frame.pack(fill="x", padx=8, pady=6)
+        ttk.Button(export_frame, text="Exportar relatório resumido (.txt)", command=self._export_report).pack(
+            side="left"
         )
+        ttk.Button(
+            export_frame,
+            text="Gerar memorial de cálculo completo (.docx)",
+            command=self._export_memorial,
+        ).pack(side="left", padx=12)
 
     def _build_tab_reinforcement(self) -> None:
         frame = self.tab_reinforcement
@@ -478,6 +706,47 @@ class SPTPilesApp(ttk.Frame):
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
         messagebox.showinfo("Relatório salvo", f"Relatório salvo em:\n{path}")
+
+    def _export_memorial(self) -> None:
+        if self.solver_result is None:
+            messagebox.showinfo("Nada para exportar", "Calcule a profundidade necessária primeiro.")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".docx", filetypes=[("Word", "*.docx")])
+        if not path:
+            return
+        try:
+            from .memorial import build_memorial
+        except ImportError as exc:
+            messagebox.showerror(
+                "Dependência ausente",
+                f"Biblioteca 'python-docx' não está instalada. Rode: pip install python-docx\n\n{exc}",
+            )
+            return
+
+        water_found, water_depth = self._get_water_table()
+        try:
+            build_memorial(
+                path,
+                self.profile,
+                self._geometry,
+                self._pile_type,
+                self.solver_result,
+                self.reinforcement_result,
+                self._fs,
+                water_table_depth_m=water_depth,
+                water_table_found=water_found,
+                ai_extraction=self.ai_extraction_result,
+            )
+        except ImportError as exc:
+            messagebox.showerror(
+                "Dependência ausente",
+                f"Biblioteca 'python-docx' não está instalada. Rode: pip install python-docx\n\n{exc}",
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erro ao gerar memorial", str(exc))
+            return
+        messagebox.showinfo("Memorial gerado", f"Memorial de cálculo salvo em:\n{path}")
 
 
 def run() -> None:

@@ -11,6 +11,13 @@ estacas a partir de um perfil de sondagem SPT (Standard Penetration Test):
   mínimas de armadura usuais associadas à NBR 6118 / NBR 6122.
 - Suporta os tipos de estaca: hélice contínua, escavada (broca), pré-moldada
   cravada e Strauss.
+- **Interpreta laudos de sondagem SPT em PDF via IA** (API da Claude,
+  Anthropic): extrai profundidade, N-SPT, tipo de solo e nível d'água
+  automaticamente, sempre com revisão humana obrigatória antes de qualquer
+  cálculo.
+- Gera um **memorial de cálculo completo em .docx**, com metodologia,
+  fórmulas e memória de cálculo (valores intermediários) de cada método e
+  de cada profundidade analisada.
 
 > ⚠️ **Aviso de engenharia**: esta ferramenta é um apoio ao
 > pré-dimensionamento, com coeficientes de referência da literatura técnica.
@@ -31,8 +38,10 @@ spt_piles/
   aoki_velloso.py         método de Aoki-Velloso
   depth_solver.py         busca da profundidade mínima que atende a carga
   reinforcement.py         dimensionamento da armação
-  report.py                 geração de relatório em texto
-  gui.py                    interface gráfica (Tkinter)
+  ai_extraction.py          interpretação de laudos SPT (PDF) via API da Claude
+  memorial.py                geração do memorial de cálculo completo (.docx)
+  report.py                   geração de relatório resumido em texto
+  gui.py                       interface gráfica (Tkinter)
 main.py                      ponto de entrada
 tests/                        testes unitários (unittest)
 ```
@@ -45,6 +54,39 @@ instalações; no Ubuntu/Debian, se necessário: `sudo apt install python3-tk`).
 ```bash
 python3 main.py
 ```
+
+Para usar a **interpretação de laudos SPT via IA** e a **geração do memorial
+em .docx**, instale as dependências opcionais e configure sua chave de API:
+
+```bash
+pip install -r requirements.txt
+
+# Linux/macOS
+export ANTHROPIC_API_KEY="sua-chave-aqui"
+# Windows (PowerShell)
+setx ANTHROPIC_API_KEY "sua-chave-aqui"
+```
+
+A chave é obtida em https://console.anthropic.com/ e **nunca** deve ser
+commitada no repositório - ela só é lida em tempo de execução, a partir da
+variável de ambiente. Sem `ANTHROPIC_API_KEY` definida, o resto do software
+funciona normalmente; apenas a aba "2. Importar Laudo (IA)" mostrará uma
+mensagem pedindo para configurar a chave.
+
+### Como funciona a importação por IA
+
+1. Na aba **"2. Importar Laudo (IA)"**, selecione o PDF do laudo/boletim de
+   sondagem SPT e clique em "Interpretar com IA".
+2. O PDF é enviado para a API da Claude (Anthropic), que localiza a tabela de
+   sondagem e retorna, para cada profundidade: N-SPT, classificação do solo
+   (dentro do vocabulário usado pelos métodos Aoki-Velloso/Décourt-Quaresma)
+   e a presença/profundidade do nível d'água, quando indicado no laudo.
+3. **Os dados extraídos NUNCA entram direto no cálculo.** Eles aparecem numa
+   tabela editável, junto com o texto original do laudo para cada linha, para
+   você conferir e corrigir eventuais erros de leitura da IA.
+4. Só depois de clicar em "Confirmar e importar" os dados substituem o perfil
+   de SPT (aba 1), que então pode ser ajustado manualmente como qualquer
+   outro perfil digitado à mão.
 
 ## Rodando os testes
 
@@ -62,8 +104,12 @@ pip install -r requirements.txt
 pyinstaller --noconfirm --onefile --windowed \
   --name spt_estacas \
   --add-data "spt_piles:spt_piles" \
+  --collect-data docx \
   main.py
 ```
+
+`--collect-data docx` é necessário para empacotar o template interno usado
+pelo `python-docx` na geração do memorial de cálculo.
 
 O executável é gerado em `dist/`. Um `spt_estacas.spec` já é criado
 automaticamente após o primeiro build e pode ser reutilizado com
@@ -95,6 +141,16 @@ app `.app`/binário macOS, rode em um Mac. No Windows, use `--add-data
 - Quando ambos os métodos SPT são selecionados, a profundidade necessária
   adota o **mais conservador** (menor capacidade admissível) entre os dois,
   por segurança.
+- A **interpretação de laudos por IA** é uma ferramenta de digitalização, não
+  um laudo geotécnico automatizado: a qualidade da extração depende da
+  legibilidade do PDF (inclusive escaneados), e erros de leitura são
+  possíveis. Por isso a importação exige sempre revisão/confirmação manual
+  antes de qualquer cálculo, e o memorial registra que os dados vieram de
+  extração por IA revisada pelo usuário, para rastreabilidade.
+- O **memorial de cálculo (.docx)** reproduz a memória completa (valores
+  intermediários por profundidade, para cada método usado) e a armação
+  sugerida, mas continua sendo um documento de apoio - ele não substitui a
+  formatação/assinatura de um memorial de cálculo oficial de projeto.
 
 ## Licença de uso
 

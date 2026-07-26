@@ -1,7 +1,10 @@
-# Este projeto usa apenas a biblioteca padrão do Python (tkinter) em tempo de
-# execução - nenhuma dependência externa é necessária para rodar via
-# `python3 main.py` (desde que o pacote tkinter do seu sistema/Python esteja
-# instalado: Ubuntu/Debian -> `sudo apt install python3-tk`).
+# Núcleo de cálculo (SPT, profundidade, armação) usa apenas a biblioteca
+# padrão do Python (tkinter para a interface gráfica). Ubuntu/Debian, se
+# necessário: `sudo apt install python3-tk`.
 #
-# A dependência abaixo é necessária apenas para GERAR o executável standalone.
+# As dependências abaixo habilitam funcionalidades opcionais:
+anthropic>=0.40.0     # interpretação de laudos SPT (PDF) via IA (aba "Importar Laudo")
+python-docx>=1.1.0    # geração do memorial de cálculo completo em .docx
+
+# Necessário apenas para GERAR o executável standalone.
 pyinstaller>=6.0
