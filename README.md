@@ -18,6 +18,12 @@ estacas a partir de um perfil de sondagem SPT (Standard Penetration Test):
 - Gera um **memorial de cálculo completo em .docx**, com metodologia,
   fórmulas e memória de cálculo (valores intermediários) de cada método e
   de cada profundidade analisada.
+- **Importa os esforços (cargas) de fundação** gerados por softwares de
+  dimensionamento estrutural (Eberick, TQS, CypeCad etc.) - manualmente,
+  por planilha CSV, ou via IA a partir do PDF do relatório de cargas - e
+  calcula automaticamente a **profundidade e a armadura de cada estaca**,
+  com opção de **uniformizar** (agrupar) as profundidades em um número
+  escolhido de padrões, para simplificar a execução na obra.
 
 > ⚠️ **Aviso de engenharia**: esta ferramenta é um apoio ao
 > pré-dimensionamento, com coeficientes de referência da literatura técnica.
@@ -38,10 +44,13 @@ spt_piles/
   aoki_velloso.py         método de Aoki-Velloso
   depth_solver.py         busca da profundidade mínima que atende a carga
   reinforcement.py         dimensionamento da armação
-  ai_extraction.py          interpretação de laudos SPT (PDF) via API da Claude
-  memorial.py                geração do memorial de cálculo completo (.docx)
-  report.py                   geração de relatório resumido em texto
-  gui.py                       interface gráfica (Tkinter)
+  ai_extraction.py          interpretação de laudos SPT e relatórios de esforços (PDF) via API da Claude
+  memorial.py                geração do memorial de cálculo completo (.docx) de uma estaca
+  loads.py                    esforços de fundação por elemento (pilar/bloco/estaca)
+  pile_group.py                cálculo em lote por estaca e uniformização (agrupamento)
+  batch_memorial.py             memorial de cálculo (.docx) do lote de estacas
+  report.py                      geração de relatório resumido em texto
+  gui.py                          interface gráfica (Tkinter)
 main.py                      ponto de entrada
 tests/                        testes unitários (unittest)
 ```
@@ -87,6 +96,32 @@ mensagem pedindo para configurar a chave.
 4. Só depois de clicar em "Confirmar e importar" os dados substituem o perfil
    de SPT (aba 1), que então pode ser ajustado manualmente como qualquer
    outro perfil digitado à mão.
+
+### Como funciona a importação de esforços e a uniformização (aba 6)
+
+1. Importe os esforços de fundação por elemento (pilar, bloco ou estaca)
+   digitando manualmente, carregando um CSV (`elemento,carga_caracteristica_kn,n_estacas`)
+   ou importando o PDF do relatório de cargas do seu software estrutural via
+   IA (mesmo fluxo de revisão da aba 2 - os itens extraídos entram
+   diretamente na tabela de esforços para você conferir/corrigir/remover
+   antes de calcular).
+2. **Use sempre a carga característica (Nk, de serviço)**, nunca a carga
+   majorada de cálculo (Nd/ELU) - a capacidade admissível (Qadm) já embute o
+   fator de segurança geotécnico, então a comparação correta é sempre contra
+   a carga característica.
+3. Quando um bloco tiver mais de uma estaca, informe o número de estacas: o
+   software divide a carga do bloco igualmente entre elas (não considera
+   excentricidade/momento - para isso, informe a carga já dividida por
+   estaca e deixe "Nº de estacas" = 1).
+4. Escolha se quer **uniformizar** as profundidades. Sem uniformização, cada
+   estaca recebe sua própria profundidade mínima necessária. Uniformizando,
+   você escolhe quantos grupos/profundidades padrão deseja (ex: 3): o
+   software ordena as estacas pela profundidade individual necessária,
+   separa em grupos e adota, para todas as estacas de cada grupo, a maior
+   profundidade individual daquele grupo - nunca uma profundidade menor do
+   que a necessidade de qualquer estaca do grupo.
+5. Gere o memorial de cálculo em lote (.docx), com os esforços importados, o
+   resultado individual e adotado de cada estaca, e a armação comum adotada.
 
 ## Rodando os testes
 
@@ -151,6 +186,20 @@ app `.app`/binário macOS, rode em um Mac. No Windows, use `--add-data
   intermediários por profundidade, para cada método usado) e a armação
   sugerida, mas continua sendo um documento de apoio - ele não substitui a
   formatação/assinatura de um memorial de cálculo oficial de projeto.
+- O **cálculo em lote por esforços importados** assume diâmetro de estaca
+  único para todo o conjunto (definido na aba 3); apenas a profundidade (e,
+  portanto, o comprimento da armadura longitudinal) varia por estaca. Não
+  há, no momento, suporte a diâmetros diferentes por estaca dentro do mesmo
+  lote.
+- A **divisão de carga em blocos com múltiplas estacas** presume
+  distribuição igual entre as estacas do bloco - não considera excentricidade
+  de carga nem momentos que gerem reação desigual entre estacas de um mesmo
+  bloco; isso deve ser verificado separadamente pelo engenheiro responsável
+  em blocos assimétricos ou com cargas excêntricas relevantes.
+- A **uniformização** agrupa as estacas ordenadas por profundidade
+  individual necessária em N grupos contíguos, adotando a maior profundidade
+  de cada grupo para todas as estacas daquele grupo - portanto sempre igual
+  ou mais conservadora do que o cálculo individual, nunca menos.
 
 ## Licença de uso
 

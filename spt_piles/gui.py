@@ -8,8 +8,16 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import depth_solver as ds
+from . import pile_group as pg
 from . import report as report_mod
-from .ai_extraction import AIExtractionError, ExtractedReading, ExtractedSPTReport
+from .ai_extraction import (
+    AIExtractionError,
+    ExtractedLoadItem,
+    ExtractedLoadsReport,
+    ExtractedReading,
+    ExtractedSPTReport,
+)
+from .loads import FoundationLoad, LoadSet
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
 from .reinforcement import STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
@@ -37,6 +45,14 @@ class SPTPilesApp(ttk.Frame):
         self.ai_extraction_result: ExtractedSPTReport | None = None
         self.ai_review_rows: list[ExtractedReading] = []
 
+        self.load_set = LoadSet()
+        self.pile_designs: list[pg.PileDesign] = []
+        self.uniformized: bool = False
+        self.n_groups_used: int | None = None
+        self.ai_loads_pdf_path: str | None = None
+        self.ai_loads_extraction_result: ExtractedLoadsReport | None = None
+        self.ai_loads_review_rows: list[ExtractedLoadItem] = []
+
         self.pack(fill="both", expand=True)
         self._build_widgets()
 
@@ -50,18 +66,21 @@ class SPTPilesApp(ttk.Frame):
         self.tab_pile = ttk.Frame(notebook)
         self.tab_results = ttk.Frame(notebook)
         self.tab_reinforcement = ttk.Frame(notebook)
+        self.tab_loads = ttk.Frame(notebook)
 
         notebook.add(self.tab_profile, text="1. Perfil SPT")
         notebook.add(self.tab_ai, text="2. Importar Laudo (IA)")
         notebook.add(self.tab_pile, text="3. Estaca e Carga")
         notebook.add(self.tab_results, text="4. Resultados")
         notebook.add(self.tab_reinforcement, text="5. Armação")
+        notebook.add(self.tab_loads, text="6. Esforços e Uniformização")
 
         self._build_tab_profile()
         self._build_tab_ai()
         self._build_tab_pile()
         self._build_tab_results()
         self._build_tab_reinforcement()
+        self._build_tab_loads()
 
         footer = ttk.Label(
             self,
@@ -747,6 +766,355 @@ class SPTPilesApp(ttk.Frame):
             messagebox.showerror("Erro ao gerar memorial", str(exc))
             return
         messagebox.showinfo("Memorial gerado", f"Memorial de cálculo salvo em:\n{path}")
+
+    # -- Tab 6: Esforços e Uniformização ------------------------------------
+    def _build_tab_loads(self) -> None:
+        frame = self.tab_loads
+
+        info = ttk.Label(
+            frame,
+            text=(
+                "Importe os esforços (cargas) de fundação por pilar/bloco/estaca vindos do "
+                "seu software de dimensionamento estrutural. Use a carga CARACTERÍSTICA (de "
+                "serviço, Nk) - nunca a carga majorada (ELU/Nd). Quando um bloco tiver mais de "
+                "uma estaca, a carga é dividida igualmente entre elas."
+            ),
+            wraplength=900,
+            justify="left",
+            foreground="#7a4a00",
+        )
+        info.pack(fill="x", padx=8, pady=8)
+
+        form = ttk.Frame(frame)
+        form.pack(fill="x", padx=8, pady=4)
+        ttk.Label(form, text="Elemento (pilar/bloco):").grid(row=0, column=0, sticky="w")
+        self.entry_load_id = ttk.Entry(form, width=12)
+        self.entry_load_id.grid(row=0, column=1, padx=4)
+        ttk.Label(form, text="Carga característica (kN):").grid(row=0, column=2, sticky="w")
+        self.entry_load_value = ttk.Entry(form, width=10)
+        self.entry_load_value.grid(row=0, column=3, padx=4)
+        ttk.Label(form, text="Nº de estacas no bloco:").grid(row=0, column=4, sticky="w")
+        self.entry_load_npiles = ttk.Entry(form, width=6)
+        self.entry_load_npiles.insert(0, "1")
+        self.entry_load_npiles.grid(row=0, column=5, padx=4)
+        ttk.Button(form, text="Adicionar", command=self._add_load_row).grid(row=0, column=6, padx=6)
+
+        columns = ("id", "load", "npiles", "per_pile")
+        self.tree_loads = ttk.Treeview(frame, columns=columns, show="headings", height=8)
+        self.tree_loads.heading("id", text="Elemento")
+        self.tree_loads.heading("load", text="Carga característica (kN)")
+        self.tree_loads.heading("npiles", text="Nº estacas no bloco")
+        self.tree_loads.heading("per_pile", text="Carga por estaca (kN)")
+        for c in columns:
+            self.tree_loads.column(c, width=180, anchor="center")
+        self.tree_loads.pack(fill="both", expand=True, padx=8, pady=4)
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", padx=8, pady=4)
+        ttk.Button(buttons, text="Remover selecionada", command=self._remove_load_row).pack(side="left")
+        ttk.Button(buttons, text="Limpar tudo", command=self._clear_loads).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Carregar CSV...", command=self._load_loads_csv).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Salvar CSV...", command=self._save_loads_csv).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Importar PDF via IA...", command=self._select_ai_loads_pdf).pack(side="left", padx=12)
+        self.button_ai_loads_run = ttk.Button(buttons, text="Interpretar com IA", command=self._run_ai_loads_extraction)
+        self.button_ai_loads_run.pack(side="left", padx=6)
+        self.label_ai_loads_pdf = ttk.Label(frame, text="Nenhum PDF selecionado.")
+        self.label_ai_loads_pdf.pack(fill="x", padx=8)
+        self.label_ai_loads_status = ttk.Label(frame, text="")
+        self.label_ai_loads_status.pack(fill="x", padx=8)
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", padx=8, pady=8)
+
+        calc_form = ttk.Frame(frame)
+        calc_form.pack(fill="x", padx=8, pady=4)
+        ttk.Label(calc_form, text="Uniformizar profundidades?").grid(row=0, column=0, sticky="w")
+        self.combo_uniformize = ttk.Combobox(calc_form, values=["Não", "Sim"], state="readonly", width=8)
+        self.combo_uniformize.current(0)
+        self.combo_uniformize.grid(row=0, column=1, padx=4)
+        ttk.Label(calc_form, text="Nº de grupos/profundidades padrão:").grid(row=0, column=2, sticky="w")
+        self.entry_n_groups = ttk.Entry(calc_form, width=6)
+        self.entry_n_groups.insert(0, "3")
+        self.entry_n_groups.grid(row=0, column=3, padx=4)
+        ttk.Button(calc_form, text="Calcular profundidade de todas as estacas", command=self._calculate_batch).grid(
+            row=0, column=4, padx=12
+        )
+
+        self.label_batch_summary = ttk.Label(frame, text="", font=("TkDefaultFont", 10, "bold"))
+        self.label_batch_summary.pack(fill="x", padx=8, pady=4)
+
+        columns2 = ("id", "per_pile", "individual", "group", "adopted")
+        self.tree_batch = ttk.Treeview(frame, columns=columns2, show="headings", height=10)
+        self.tree_batch.heading("id", text="Elemento")
+        self.tree_batch.heading("per_pile", text="Carga/estaca (kN)")
+        self.tree_batch.heading("individual", text="Prof. individual (m)")
+        self.tree_batch.heading("group", text="Grupo")
+        self.tree_batch.heading("adopted", text="Prof. adotada (m)")
+        for c in columns2:
+            self.tree_batch.column(c, width=170, anchor="center")
+        self.tree_batch.pack(fill="both", expand=True, padx=8, pady=4)
+
+        ttk.Button(
+            frame, text="Gerar memorial de cálculo em lote (.docx)", command=self._export_batch_memorial
+        ).pack(padx=8, pady=8, anchor="w")
+
+    def _add_load_row(self) -> None:
+        try:
+            element_id = self.entry_load_id.get().strip()
+            load_kn = float(self.entry_load_value.get().replace(",", "."))
+            n_piles = int(float(self.entry_load_npiles.get().replace(",", ".")))
+            self.load_set.add(element_id, load_kn, n_piles)
+        except ValueError as exc:
+            messagebox.showerror("Entrada inválida", str(exc))
+            return
+        self._refresh_loads_tree()
+        self.entry_load_id.delete(0, tk.END)
+        self.entry_load_value.delete(0, tk.END)
+        self.entry_load_npiles.delete(0, tk.END)
+        self.entry_load_npiles.insert(0, "1")
+
+    def _remove_load_row(self) -> None:
+        selected = self.tree_loads.selection()
+        if not selected:
+            return
+        ids_to_remove = {self.tree_loads.item(i, "values")[0] for i in selected}
+        kept = []
+        removed_once = {k: False for k in ids_to_remove}
+        for item in self.load_set.items:
+            key = item.element_id
+            if key in ids_to_remove and not removed_once[key]:
+                removed_once[key] = True
+                continue
+            kept.append(item)
+        self.load_set.items = kept
+        self._refresh_loads_tree()
+
+    def _clear_loads(self) -> None:
+        self.load_set.clear()
+        self._refresh_loads_tree()
+
+    def _refresh_loads_tree(self) -> None:
+        self.tree_loads.delete(*self.tree_loads.get_children())
+        for item in self.load_set.items:
+            self.tree_loads.insert(
+                "",
+                "end",
+                values=(item.element_id, f"{item.characteristic_load_kn:.1f}", item.n_piles, f"{item.load_per_pile_kn:.1f}"),
+            )
+
+    def _load_loads_csv(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv"), ("Todos", "*.*")])
+        if not path:
+            return
+        try:
+            new_loads = LoadSet()
+            with open(path, newline="", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+            start = 1 if rows and not rows[0][1].replace(".", "", 1).replace(",", "", 1).isdigit() else 0
+            for row in rows[start:]:
+                if not row:
+                    continue
+                element_id = row[0].strip()
+                load_kn = float(row[1].replace(",", "."))
+                n_piles = int(float(row[2])) if len(row) > 2 and row[2].strip() else 1
+                new_loads.add(element_id, load_kn, n_piles)
+            self.load_set = new_loads
+            self._refresh_loads_tree()
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erro ao carregar CSV", str(exc))
+
+    def _save_loads_csv(self) -> None:
+        if not self.load_set.items:
+            messagebox.showinfo("Nada para salvar", "Não há esforços para salvar.")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["elemento", "carga_caracteristica_kn", "n_estacas"])
+            for item in self.load_set.items:
+                writer.writerow([item.element_id, item.characteristic_load_kn, item.n_piles])
+
+    def _select_ai_loads_pdf(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")])
+        if not path:
+            return
+        self.ai_loads_pdf_path = path
+        self.label_ai_loads_pdf.config(text=path)
+
+    def _run_ai_loads_extraction(self) -> None:
+        if not self.ai_loads_pdf_path:
+            messagebox.showinfo("Selecione um PDF", "Selecione o PDF do relatório de esforços primeiro.")
+            return
+
+        self.button_ai_loads_run.config(state="disabled")
+        self.label_ai_loads_status.config(text="Processando com IA... isso pode levar até 1 minuto.", foreground="#1a6fd6")
+
+        def worker() -> None:
+            try:
+                from .ai_extraction import extract_foundation_loads
+
+                result = extract_foundation_loads(self.ai_loads_pdf_path)
+            except AIExtractionError as exc:
+                self.after(0, lambda: self._on_ai_loads_extraction_error(str(exc)))
+                return
+            except Exception as exc:  # noqa: BLE001
+                self.after(0, lambda: self._on_ai_loads_extraction_error(f"Erro inesperado: {exc}"))
+                return
+            self.after(0, lambda: self._on_ai_loads_extraction_done(result))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_ai_loads_extraction_error(self, message: str) -> None:
+        self.button_ai_loads_run.config(state="normal")
+        self.label_ai_loads_status.config(text="", foreground="black")
+        messagebox.showerror("Erro na interpretação por IA", message)
+
+    def _on_ai_loads_extraction_done(self, result: ExtractedLoadsReport) -> None:
+        self.button_ai_loads_run.config(state="normal")
+        self.ai_loads_extraction_result = result
+        self.label_ai_loads_status.config(
+            text="", foreground="black",
+        )
+        added = 0
+        for item in result.items:
+            try:
+                self.load_set.add(item.element_id, item.characteristic_load_kn, item.n_piles)
+                added += 1
+            except ValueError:
+                continue
+        self._refresh_loads_tree()
+        messagebox.showinfo(
+            "Esforços importados",
+            f"{added} elemento(s) importados pela IA para a lista de esforços. Revise os "
+            "valores na tabela (compare com o PDF original) antes de calcular.",
+        )
+
+    def _calculate_batch(self) -> None:
+        if not self.load_set.is_valid():
+            messagebox.showinfo("Nenhum esforço", "Adicione ou importe ao menos um esforço de fundação.")
+            return
+        try:
+            if not self.profile.is_valid():
+                raise ValueError("Adicione ao menos 2 leituras de SPT na aba 1.")
+            diameter_cm = float(self.entry_diameter.get().replace(",", "."))
+            fs = float(self.entry_fs.get().replace(",", "."))
+            min_depth = float(self.entry_min_depth.get().replace(",", "."))
+            pile_type = self._selected_pile_type_key()
+            method = self._selected_method_key()
+            geometry = PileGeometry(diameter_cm=diameter_cm)
+
+            designs = pg.compute_individual_designs(
+                self.load_set.items, self.profile, geometry, pile_type, method=method,
+                safety_factor=fs, min_depth_m=min_depth,
+            )
+
+            uniformize = self.combo_uniformize.get() == "Sim"
+            n_groups = None
+            if uniformize:
+                n_groups = int(float(self.entry_n_groups.get().replace(",", ".")))
+                pg.apply_group_uniformization(designs, n_groups)
+            else:
+                pg.apply_no_uniformization(designs)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erro no cálculo em lote", str(exc))
+            return
+
+        self.pile_designs = designs
+        self.uniformized = uniformize
+        self.n_groups_used = n_groups
+        self._geometry = geometry
+        self._pile_type = pile_type
+        self._fs = fs
+
+        try:
+            cover = float(self.entry_cover.get().replace(",", "."))
+            rho_txt = self.entry_rho_min.get().strip()
+            rho_min = float(rho_txt.replace(",", ".")) if rho_txt else None
+            stirrup_d = float(self.combo_stirrup.get())
+            spacing_body = float(self.entry_stirrup_body.get().replace(",", "."))
+            spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
+            max_load = max(d.load_per_pile_kn for d in designs)
+            self.reinforcement_result = design_reinforcement(
+                geometry, axial_load_kn=max_load, cover_cm=cover, rho_min_pct=rho_min,
+                stirrup_diameter_mm=stirrup_d, stirrup_spacing_body_cm=spacing_body,
+                stirrup_spacing_top_cm=spacing_top,
+            )
+            self._render_reinforcement(self.reinforcement_result)
+        except Exception:  # noqa: BLE001 - armação é complementar; falha aqui não impede o resultado em lote
+            pass
+
+        self._refresh_batch_tree()
+
+    def _refresh_batch_tree(self) -> None:
+        self.tree_batch.delete(*self.tree_batch.get_children())
+        n_infeasible = 0
+        for d in self.pile_designs:
+            individual_txt = f"{d.individual_required_depth_m:.2f}" if d.individual_required_depth_m is not None else "INVIÁVEL"
+            adopted_txt = f"{d.adopted_depth_m:.2f}" if d.adopted_depth_m is not None else "-"
+            if d.individual_required_depth_m is None:
+                n_infeasible += 1
+            self.tree_batch.insert(
+                "", "end",
+                values=(d.element_id, f"{d.load_per_pile_kn:.1f}", individual_txt, d.group_label or "-", adopted_txt),
+            )
+        total = len(self.pile_designs)
+        summary = f"{total} elemento(s) calculado(s)"
+        if n_infeasible:
+            summary += f" - {n_infeasible} inviável(is) (carga não atingida no perfil sondado)"
+        if self.uniformized:
+            distinct = {d.adopted_depth_m for d in self.pile_designs if d.adopted_depth_m is not None}
+            summary += f" - uniformizado em {len(distinct)} profundidade(s) padrão"
+        self.label_batch_summary.config(
+            text=summary, foreground=("#b00020" if n_infeasible else "#0a6e0a")
+        )
+
+    def _export_batch_memorial(self) -> None:
+        if not self.pile_designs:
+            messagebox.showinfo("Nada para exportar", "Calcule a profundidade de todas as estacas primeiro.")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".docx", filetypes=[("Word", "*.docx")])
+        if not path:
+            return
+        try:
+            from .batch_memorial import build_batch_memorial
+        except ImportError as exc:
+            messagebox.showerror(
+                "Dependência ausente",
+                f"Biblioteca 'python-docx' não está instalada. Rode: pip install python-docx\n\n{exc}",
+            )
+            return
+
+        water_found, water_depth = self._get_water_table()
+        method = self._selected_method_key()
+        try:
+            build_batch_memorial(
+                path,
+                self.load_set.items,
+                self.pile_designs,
+                self.profile,
+                self._geometry,
+                self._pile_type,
+                method,
+                self._fs,
+                self.reinforcement_result,
+                uniformized=self.uniformized,
+                n_groups=self.n_groups_used,
+                water_table_depth_m=water_depth,
+                water_table_found=water_found,
+                ai_loads_extraction=self.ai_loads_extraction_result,
+            )
+        except ImportError as exc:
+            messagebox.showerror(
+                "Dependência ausente",
+                f"Biblioteca 'python-docx' não está instalada. Rode: pip install python-docx\n\n{exc}",
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erro ao gerar memorial", str(exc))
+            return
+        messagebox.showinfo("Memorial gerado", f"Memorial de cálculo em lote salvo em:\n{path}")
 
 
 def run() -> None:

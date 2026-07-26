@@ -1,6 +1,6 @@
 import unittest
 
-from spt_piles.ai_extraction import AIExtractionError, _parse_tool_output
+from spt_piles.ai_extraction import AIExtractionError, _parse_spt_tool_output as _parse_tool_output
 
 
 class TestParseToolOutput(unittest.TestCase):
