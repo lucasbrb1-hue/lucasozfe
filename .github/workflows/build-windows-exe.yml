@@ -11,6 +11,9 @@ on:
       - ".github/workflows/build-windows-exe.yml"
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -43,3 +46,18 @@ jobs:
           name: spt_estacas-windows
           path: dist/spt_estacas.exe
           if-no-files-found: error
+
+      - name: Publish/update release with the executable
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-build-latest
+          name: "spt_estacas.exe (build mais recente - Windows)"
+          body: |
+            Executável Windows gerado automaticamente pelo GitHub Actions a partir do
+            commit ${{ github.sha }} da branch `${{ github.ref_name }}`.
+
+            Baixe `spt_estacas.exe` abaixo e rode diretamente - não é necessário
+            instalar Python nem nenhuma dependência. Esta release é atualizada
+            automaticamente a cada novo build; o link permanece o mesmo.
+          prerelease: true
+          files: dist/spt_estacas.exe

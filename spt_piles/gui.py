@@ -61,6 +61,7 @@ class SPTPilesApp(ttk.Frame):
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=8, pady=8)
 
+        self.tab_settings = ttk.Frame(notebook)
         self.tab_profile = ttk.Frame(notebook)
         self.tab_ai = ttk.Frame(notebook)
         self.tab_pile = ttk.Frame(notebook)
@@ -68,6 +69,7 @@ class SPTPilesApp(ttk.Frame):
         self.tab_reinforcement = ttk.Frame(notebook)
         self.tab_loads = ttk.Frame(notebook)
 
+        notebook.add(self.tab_settings, text="⚙ Configurações")
         notebook.add(self.tab_profile, text="1. Perfil SPT")
         notebook.add(self.tab_ai, text="2. Importar Laudo (IA)")
         notebook.add(self.tab_pile, text="3. Estaca e Carga")
@@ -75,6 +77,7 @@ class SPTPilesApp(ttk.Frame):
         notebook.add(self.tab_reinforcement, text="5. Armação")
         notebook.add(self.tab_loads, text="6. Esforços e Uniformização")
 
+        self._build_tab_settings()
         self._build_tab_profile()
         self._build_tab_ai()
         self._build_tab_pile()
@@ -91,6 +94,89 @@ class SPTPilesApp(ttk.Frame):
             foreground="#7a4a00",
         )
         footer.pack(fill="x", padx=8, pady=(0, 6))
+
+    # -- Aba de Configurações ------------------------------------------------
+    def _build_tab_settings(self) -> None:
+        frame = self.tab_settings
+
+        info = ttk.Label(
+            frame,
+            text=(
+                "Cole aqui sua própria chave de API da Anthropic (Claude) para usar as "
+                "abas de importação por IA (laudo SPT e esforços de fundação). A chave é "
+                "salva apenas neste computador, em um arquivo de configuração local (em "
+                "texto simples) - cada pessoa que usar este programa deve configurar a "
+                "sua própria chave. Obtenha uma chave em https://console.anthropic.com/"
+            ),
+            wraplength=900,
+            justify="left",
+        )
+        info.pack(fill="x", padx=8, pady=8)
+
+        form = ttk.Frame(frame)
+        form.pack(fill="x", padx=8, pady=4)
+        ttk.Label(form, text="Chave de API (ANTHROPIC_API_KEY):").grid(row=0, column=0, sticky="w")
+        self.entry_api_key = ttk.Entry(form, width=55, show="•")
+        self.entry_api_key.grid(row=0, column=1, padx=6)
+
+        self.var_show_api_key = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            form, text="Mostrar", variable=self.var_show_api_key, command=self._toggle_api_key_visibility
+        ).grid(row=0, column=2, padx=6)
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", padx=8, pady=6)
+        ttk.Button(buttons, text="Salvar chave", command=self._save_api_key).pack(side="left")
+        ttk.Button(buttons, text="Remover chave salva", command=self._clear_api_key).pack(side="left", padx=8)
+
+        self.label_api_key_status = ttk.Label(frame, text="", font=("TkDefaultFont", 10, "bold"))
+        self.label_api_key_status.pack(fill="x", padx=8, pady=8)
+
+        self._refresh_api_key_status()
+
+    def _toggle_api_key_visibility(self) -> None:
+        self.entry_api_key.config(show="" if self.var_show_api_key.get() else "•")
+
+    def _save_api_key(self) -> None:
+        from .config import save_api_key
+
+        key = self.entry_api_key.get().strip()
+        try:
+            save_api_key(key)
+        except ValueError as exc:
+            messagebox.showerror("Chave inválida", str(exc))
+            return
+        self.entry_api_key.delete(0, tk.END)
+        self._refresh_api_key_status()
+        messagebox.showinfo("Chave salva", "Chave de API salva neste computador.")
+
+    def _clear_api_key(self) -> None:
+        from .config import clear_api_key
+
+        clear_api_key()
+        self._refresh_api_key_status()
+
+    def _refresh_api_key_status(self) -> None:
+        import os
+
+        from .config import load_api_key
+
+        env_key = os.environ.get("ANTHROPIC_API_KEY")
+        saved_key = load_api_key()
+        if env_key:
+            text = (
+                "Usando chave da variável de ambiente ANTHROPIC_API_KEY "
+                "(tem prioridade sobre a chave salva na aba Configurações)."
+            )
+            color = "#0a6e0a"
+        elif saved_key:
+            tail = saved_key[-4:] if len(saved_key) >= 4 else saved_key
+            text = f"Chave salva neste computador (terminando em ...{tail})."
+            color = "#0a6e0a"
+        else:
+            text = "Nenhuma chave configurada. As abas de importação por IA não vão funcionar até configurar."
+            color = "#b00020"
+        self.label_api_key_status.config(text=text, foreground=color)
 
     # -- Tab 1: Perfil SPT -------------------------------------------------
     def _build_tab_profile(self) -> None:

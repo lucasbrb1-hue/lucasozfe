@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from spt_piles.ai_extraction import AIExtractionError, _parse_spt_tool_output as _parse_tool_output
 
@@ -58,13 +59,10 @@ class TestParseToolOutput(unittest.TestCase):
 
         from spt_piles.ai_extraction import extract_spt_report
 
-        old = os.environ.pop("ANTHROPIC_API_KEY", None)
-        try:
-            with self.assertRaises(AIExtractionError):
-                extract_spt_report("/nonexistent/file.pdf")
-        finally:
-            if old is not None:
-                os.environ["ANTHROPIC_API_KEY"] = old
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("spt_piles.config.load_api_key", return_value=None):
+                with self.assertRaises(AIExtractionError):
+                    extract_spt_report("/nonexistent/file.pdf")
 
 
 if __name__ == "__main__":

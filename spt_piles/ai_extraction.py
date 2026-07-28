@@ -7,9 +7,11 @@ dados de cálculo - sempre retorna uma proposta de leitura que deve ser
 revisada e confirmada manualmente na interface antes de ser usada em
 qualquer cálculo (ver gui.py).
 
-Configuração: defina a variável de ambiente ANTHROPIC_API_KEY com uma chave
-válida da API da Anthropic (https://console.anthropic.com/) antes de abrir o
-programa. Opcionalmente, ANTHROPIC_MODEL pode sobrescrever o modelo padrão.
+Configuração da chave de API: cada usuário pode colar sua própria chave da
+Anthropic (https://console.anthropic.com/) na aba "Configurações" da
+interface (salva localmente em config.py) ou, alternativamente, definir a
+variável de ambiente ANTHROPIC_API_KEY (que tem prioridade quando presente).
+Opcionalmente, ANTHROPIC_MODEL pode sobrescrever o modelo padrão.
 """
 
 from __future__ import annotations
@@ -56,12 +58,15 @@ def _call_pdf_tool(
             "Biblioteca 'anthropic' não está instalada. Rode: pip install anthropic"
         ) from exc
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    from .config import resolve_api_key
+
+    api_key = resolve_api_key()
     if not api_key:
         raise AIExtractionError(
-            "Variável de ambiente ANTHROPIC_API_KEY não está definida. Defina sua "
-            "chave da API da Anthropic (https://console.anthropic.com/) antes de "
-            "abrir o programa e tente novamente."
+            "Nenhuma chave de API configurada. Cole sua chave da Anthropic "
+            "(https://console.anthropic.com/) na aba \"Configurações\" e clique em "
+            "Salvar, ou defina a variável de ambiente ANTHROPIC_API_KEY, e tente "
+            "novamente."
         )
 
     try:

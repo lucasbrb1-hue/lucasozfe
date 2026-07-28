@@ -64,23 +64,35 @@ instalações; no Ubuntu/Debian, se necessário: `sudo apt install python3-tk`).
 python3 main.py
 ```
 
-Para usar a **interpretação de laudos SPT via IA** e a **geração do memorial
-em .docx**, instale as dependências opcionais e configure sua chave de API:
+Para usar a **interpretação por IA** (laudo SPT e esforços de fundação) e a
+**geração do memorial em .docx**, instale as dependências opcionais:
 
 ```bash
 pip install -r requirements.txt
-
-# Linux/macOS
-export ANTHROPIC_API_KEY="sua-chave-aqui"
-# Windows (PowerShell)
-setx ANTHROPIC_API_KEY "sua-chave-aqui"
 ```
 
-A chave é obtida em https://console.anthropic.com/ e **nunca** deve ser
-commitada no repositório - ela só é lida em tempo de execução, a partir da
-variável de ambiente. Sem `ANTHROPIC_API_KEY` definida, o resto do software
-funciona normalmente; apenas a aba "2. Importar Laudo (IA)" mostrará uma
-mensagem pedindo para configurar a chave.
+E configure sua chave de API de uma das duas formas:
+
+- **Pela interface (recomendado para a maioria dos usuários)**: abra o
+  programa, vá na aba **"⚙ Configurações"**, cole sua chave da Anthropic
+  (obtida em https://console.anthropic.com/) e clique em "Salvar chave". Ela
+  fica salva localmente neste computador (arquivo de configuração no
+  diretório do usuário - `%APPDATA%\spt_estacas\config.json` no Windows,
+  `~/.config/spt_estacas/config.json` no Linux/macOS), em texto simples.
+  **Cada pessoa que usar o programa configura a sua própria chave**, direto
+  na aba - não precisa editar nada por fora.
+- **Por variável de ambiente** (uso avançado/CI - tem prioridade sobre a
+  chave salva na aba Configurações, se ambas estiverem definidas):
+  ```bash
+  # Linux/macOS
+  export ANTHROPIC_API_KEY="sua-chave-aqui"
+  # Windows (PowerShell)
+  setx ANTHROPIC_API_KEY "sua-chave-aqui"
+  ```
+
+A chave **nunca** deve ser commitada no repositório. Sem nenhuma chave
+configurada, o resto do software funciona normalmente; apenas as abas de
+importação por IA mostram uma mensagem pedindo para configurar a chave.
 
 ### Como funciona a importação por IA
 
@@ -128,6 +140,24 @@ mensagem pedindo para configurar a chave.
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Baixar o `.exe` do Windows já pronto (sem instalar Python)
+
+Não é necessário instalar Python nem rodar nenhum comando para obter o
+executável do Windows: um workflow do GitHub Actions
+(`.github/workflows/build-windows-exe.yml`) builda o `spt_estacas.exe`
+automaticamente a cada alteração relevante nesta branch, roda a suíte de
+testes, e publica o binário em uma **Release fixa** do repositório:
+
+**https://github.com/lucasbrb1-hue/lucasozfe/releases/tag/windows-build-latest**
+
+Baixe o `spt_estacas.exe` anexado a essa release (link direto, não exige
+login no GitHub) e rode - é um binário standalone, não precisa de Python
+instalado no computador que for executá-lo. Essa release é atualizada
+automaticamente a cada novo build; o link acima permanece sempre o mesmo.
+
+Se quiser gerar o executável você mesmo (por exemplo, para testar uma
+alteração local antes de commitar), siga a seção abaixo.
 
 ## Gerando o executável (PyInstaller)
 
