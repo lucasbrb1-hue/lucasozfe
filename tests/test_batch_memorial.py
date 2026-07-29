@@ -104,6 +104,34 @@ class TestBatchMemorial(unittest.TestCase):
             self.assertIn("INVIÁVEL", text)
             self.assertIn("estaca(s) não atingem", text)
 
+    def test_partial_armor_length_reflected_per_pile_in_table(self):
+        from spt_piles.reinforcement import effective_armor_length_m
+        from spt_piles.batch_memorial import build_batch_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=40)
+        loads = [
+            FoundationLoad("P1", 300.0, 1),
+            FoundationLoad("P2", 700.0, 1),
+        ]
+        designs = pg.compute_individual_designs(loads, profile, geometry, "pre_moldada", method=ds.METHOD_DQ)
+        pg.apply_no_uniformization(designs)
+        for d in designs:
+            self.assertIsNotNone(d.adopted_depth_m)
+        reinforcement = design_reinforcement(geometry, axial_load_kn=700.0, armor_length_m=5.0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "batch.docx")
+            build_batch_memorial(
+                out_path, loads, designs, profile, geometry, "pre_moldada", ds.METHOD_DQ,
+                safety_factor=2.0, reinforcement=reinforcement, uniformized=False,
+            )
+            text = _all_text(docx.Document(out_path))
+            for d in designs:
+                expected = f"{effective_armor_length_m(reinforcement, d.adopted_depth_m):.2f}"
+                self.assertIn(expected, text)
+            self.assertIn("Compr. armadura (m)", text)
+
 
 if __name__ == "__main__":
     unittest.main()

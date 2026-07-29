@@ -633,6 +633,18 @@ class SPTPilesApp(ttk.Frame):
         self.entry_stirrup_top.grid(row=r, column=1, sticky="w")
         r += 1
 
+        ttk.Label(grid, text="Profundidade de armação (m) [vazio = toda a extensão da estaca]:").grid(
+            row=r, column=0, sticky="w", pady=4
+        )
+        self.entry_armor_length = ttk.Entry(grid, width=10)
+        self.entry_armor_length.grid(row=r, column=1, sticky="w")
+        ttk.Label(
+            grid,
+            text="(armadura parcial só vale para estacas só à compressão axial - confirme com o eng. responsável)",
+            foreground="#7a4a00",
+        ).grid(row=r, column=2, sticky="w", padx=6)
+        r += 1
+
         ttk.Button(grid, text="Calcular armação", command=self._calculate_reinforcement).grid(
             row=r, column=0, columnspan=2, pady=12
         )
@@ -744,6 +756,8 @@ class SPTPilesApp(ttk.Frame):
             stirrup_d = float(self.combo_stirrup.get())
             spacing_body = float(self.entry_stirrup_body.get().replace(",", "."))
             spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
+            armor_txt = self.entry_armor_length.get().strip()
+            armor_length = float(armor_txt.replace(",", ".")) if armor_txt else None
 
             result = design_reinforcement(
                 self._geometry,
@@ -753,15 +767,17 @@ class SPTPilesApp(ttk.Frame):
                 stirrup_diameter_mm=stirrup_d,
                 stirrup_spacing_body_cm=spacing_body,
                 stirrup_spacing_top_cm=spacing_top,
+                armor_length_m=armor_length,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Erro no cálculo de armação", str(exc))
             return
 
         self.reinforcement_result = result
-        self._render_reinforcement(result)
+        pile_depth = self.solver_result.required_depth_m if self.solver_result else None
+        self._render_reinforcement(result, pile_depth_m=pile_depth)
 
-    def _render_reinforcement(self, result) -> None:
+    def _render_reinforcement(self, result, pile_depth_m: float | None = None) -> None:
         self.text_reinforcement.delete("1.0", tk.END)
         lines = [
             f"Diâmetro da estaca: {result.diameter_cm:.1f} cm",
@@ -788,6 +804,22 @@ class SPTPilesApp(ttk.Frame):
             f"Zona de confinamento (primeiros {result.confinement_length_m:.2f} m a partir do topo): "
             f"estribos a cada {result.stirrup_spacing_top_cm:.0f} cm"
         )
+        lines.append("")
+        if result.requested_armor_length_m is None:
+            lines.append("Comprimento de armadura: toda a extensão da estaca (armadura corrida).")
+        else:
+            lines.append(
+                f"Comprimento de armadura solicitado: {result.requested_armor_length_m:.2f} m a partir do "
+                f"topo (limitado à profundidade real de cada estaca, se ela for menor que esse valor)."
+            )
+        if pile_depth_m is not None:
+            from .reinforcement import effective_armor_length_m
+
+            eff = effective_armor_length_m(result, pile_depth_m)
+            lines.append(
+                f"Nesta estaca (profundidade adotada = {pile_depth_m:.2f} m): comprimento efetivo de "
+                f"armadura = {eff:.2f} m."
+            )
         for w in result.warnings:
             lines.append(f"\nAVISO: {w}")
 
@@ -928,13 +960,14 @@ class SPTPilesApp(ttk.Frame):
         self.label_batch_summary = ttk.Label(frame, text="", font=("TkDefaultFont", 10, "bold"))
         self.label_batch_summary.pack(fill="x", padx=8, pady=4)
 
-        columns2 = ("id", "per_pile", "individual", "group", "adopted")
+        columns2 = ("id", "per_pile", "individual", "group", "adopted", "armor")
         self.tree_batch = ttk.Treeview(frame, columns=columns2, show="headings", height=10)
         self.tree_batch.heading("id", text="Elemento")
         self.tree_batch.heading("per_pile", text="Carga/estaca (kN)")
         self.tree_batch.heading("individual", text="Prof. individual (m)")
         self.tree_batch.heading("group", text="Grupo")
         self.tree_batch.heading("adopted", text="Prof. adotada (m)")
+        self.tree_batch.heading("armor", text="Compr. armadura (m)")
         for c in columns2:
             self.tree_batch.column(c, width=170, anchor="center")
         self.tree_batch.pack(fill="both", expand=True, padx=8, pady=4)
@@ -1121,11 +1154,13 @@ class SPTPilesApp(ttk.Frame):
             stirrup_d = float(self.combo_stirrup.get())
             spacing_body = float(self.entry_stirrup_body.get().replace(",", "."))
             spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
+            armor_txt = self.entry_armor_length.get().strip()
+            armor_length = float(armor_txt.replace(",", ".")) if armor_txt else None
             max_load = max(d.load_per_pile_kn for d in designs)
             self.reinforcement_result = design_reinforcement(
                 geometry, axial_load_kn=max_load, cover_cm=cover, rho_min_pct=rho_min,
                 stirrup_diameter_mm=stirrup_d, stirrup_spacing_body_cm=spacing_body,
-                stirrup_spacing_top_cm=spacing_top,
+                stirrup_spacing_top_cm=spacing_top, armor_length_m=armor_length,
             )
             self._render_reinforcement(self.reinforcement_result)
         except Exception:  # noqa: BLE001 - armação é complementar; falha aqui não impede o resultado em lote
@@ -1134,6 +1169,8 @@ class SPTPilesApp(ttk.Frame):
         self._refresh_batch_tree()
 
     def _refresh_batch_tree(self) -> None:
+        from .reinforcement import effective_armor_length_m
+
         self.tree_batch.delete(*self.tree_batch.get_children())
         n_infeasible = 0
         for d in self.pile_designs:
@@ -1141,9 +1178,16 @@ class SPTPilesApp(ttk.Frame):
             adopted_txt = f"{d.adopted_depth_m:.2f}" if d.adopted_depth_m is not None else "-"
             if d.individual_required_depth_m is None:
                 n_infeasible += 1
+            if d.adopted_depth_m is not None and self.reinforcement_result is not None:
+                armor_txt = f"{effective_armor_length_m(self.reinforcement_result, d.adopted_depth_m):.2f}"
+            else:
+                armor_txt = "-"
             self.tree_batch.insert(
                 "", "end",
-                values=(d.element_id, f"{d.load_per_pile_kn:.1f}", individual_txt, d.group_label or "-", adopted_txt),
+                values=(
+                    d.element_id, f"{d.load_per_pile_kn:.1f}", individual_txt, d.group_label or "-",
+                    adopted_txt, armor_txt,
+                ),
             )
         total = len(self.pile_designs)
         summary = f"{total} elemento(s) calculado(s)"

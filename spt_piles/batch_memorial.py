@@ -13,7 +13,7 @@ from .memorial import DISCLAIMER, _add_methodology, _add_reinforcement_section, 
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
 from .pile_group import PileDesign
-from .reinforcement import ReinforcementResult
+from .reinforcement import ReinforcementResult, effective_armor_length_m
 from .soil_data import get_soil
 
 BATCH_DISCLAIMER_EXTRA = (
@@ -122,9 +122,17 @@ def build_batch_memorial(
             "para todas as estacas daquele grupo (nunca inferior à necessidade "
             "individual de nenhuma estaca do grupo)."
         )
+    def _armor_txt(d: PileDesign) -> str:
+        if d.adopted_depth_m is None or reinforcement is None:
+            return "-"
+        return f"{effective_armor_length_m(reinforcement, d.adopted_depth_m):.2f}"
+
     _add_table(
         doc,
-        ["Elemento", "Carga/estaca (kN)", "Prof. individual necessária (m)", "Grupo", "Prof. adotada (m)"],
+        [
+            "Elemento", "Carga/estaca (kN)", "Prof. individual necessária (m)", "Grupo",
+            "Prof. adotada (m)", "Compr. armadura (m)",
+        ],
         [
             [
                 d.element_id,
@@ -132,6 +140,7 @@ def build_batch_memorial(
                 (f"{d.individual_required_depth_m:.2f}" if d.individual_required_depth_m is not None else "INVIÁVEL"),
                 (d.group_label or "-"),
                 (f"{d.adopted_depth_m:.2f}" if d.adopted_depth_m is not None else "-"),
+                _armor_txt(d),
             ]
             for d in designs
         ],
@@ -146,11 +155,22 @@ def build_batch_memorial(
 
     if reinforcement is not None:
         doc.add_heading(f"{section_n}. Armação adotada (comum a todas as estacas)", level=1)
-        doc.add_paragraph(
-            "A armação abaixo é comum a todas as estacas (mesmo diâmetro em todo o "
-            "conjunto); o comprimento das barras longitudinais de cada estaca "
-            "corresponde à sua profundidade adotada, indicada na tabela da seção anterior."
-        )
+        if reinforcement.requested_armor_length_m is None:
+            doc.add_paragraph(
+                "A armação abaixo (bitola, quantidade de barras, estribos) é comum a todas as "
+                "estacas (mesmo diâmetro em todo o conjunto); a armadura longitudinal corre por "
+                "toda a profundidade adotada de cada estaca, já indicada na coluna \"Compr. "
+                "armadura (m)\" da tabela da seção anterior."
+            )
+        else:
+            doc.add_paragraph(
+                "A armação abaixo (bitola, quantidade de barras, estribos) é comum a todas as "
+                "estacas (mesmo diâmetro em todo o conjunto); o comprimento efetivo da armadura "
+                "longitudinal de cada estaca está na coluna \"Compr. armadura (m)\" da tabela da "
+                "seção anterior (armadura parcial, limitada a "
+                f"{reinforcement.requested_armor_length_m:.2f} m a partir do topo, ou à "
+                "profundidade da estaca, o que for menor)."
+            )
         _add_reinforcement_section(doc, reinforcement)
         section_n += 1
 

@@ -80,6 +80,36 @@ class TestMemorial(unittest.TestCase):
             self.assertIn("Décourt-Quaresma", full_text)
             self.assertNotIn("rp = (K · Np) / F1", full_text)
 
+    def test_build_memorial_reports_full_length_armor_by_default(self):
+        from spt_piles.memorial import build_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=40)
+        solver_result = ds.solve(profile, geometry, "pre_moldada", load_kn=300.0, method=ds.METHOD_DQ)
+        reinforcement = design_reinforcement(geometry, axial_load_kn=300.0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "memorial.docx")
+            build_memorial(out_path, profile, geometry, "pre_moldada", solver_result, reinforcement, safety_factor=2.0)
+            full_text = _all_text(docx.Document(out_path))
+            self.assertIn("toda a profundidade da estaca", full_text)
+
+    def test_build_memorial_reports_partial_armor_length_and_effective_value(self):
+        from spt_piles.memorial import build_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=40)
+        solver_result = ds.solve(profile, geometry, "pre_moldada", load_kn=300.0, method=ds.METHOD_DQ)
+        self.assertIsNotNone(solver_result.required_depth_m)
+        reinforcement = design_reinforcement(geometry, axial_load_kn=300.0, armor_length_m=6.0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "memorial.docx")
+            build_memorial(out_path, profile, geometry, "pre_moldada", solver_result, reinforcement, safety_factor=2.0)
+            full_text = _all_text(docx.Document(out_path))
+            self.assertIn("limitada a 6.00 m", full_text)
+            self.assertIn("comprimento efetivo de armadura", full_text)
+
 
 if __name__ == "__main__":
     unittest.main()

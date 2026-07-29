@@ -62,7 +62,20 @@ class ReinforcementResult:
     stirrup_spacing_body_cm: float
     stirrup_spacing_top_cm: float
     confinement_length_m: float
+    requested_armor_length_m: float | None = None
     warnings: list[str] = field(default_factory=list)
+
+
+def effective_armor_length_m(result: ReinforcementResult, pile_depth_m: float) -> float:
+    """Comprimento efetivo da armadura longitudinal para uma estaca de uma
+    dada profundidade: se o usuário não pediu armadura parcial
+    (requested_armor_length_m is None), a armadura corre por toda a
+    profundidade da estaca; senão, é limitada ao menor valor entre o pedido
+    e a profundidade real da estaca (não faz sentido armar além do fundo)."""
+
+    if result.requested_armor_length_m is None:
+        return pile_depth_m
+    return min(result.requested_armor_length_m, pile_depth_m)
 
 
 def _min_clear_spacing_cm(bar_diameter_mm: float) -> float:
@@ -111,11 +124,23 @@ def design_reinforcement(
     stirrup_spacing_body_cm: float = 15.0,
     stirrup_spacing_top_cm: float = 10.0,
     confinement_length_factor: float = 3.0,
+    armor_length_m: float | None = None,
 ) -> ReinforcementResult:
+    """`armor_length_m`: comprimento desejado de armadura longitudinal a
+    partir do topo da estaca. None (padrão) arma toda a extensão da estaca -
+    a opção mais segura/conservadora. Um valor numérico arma apenas os
+    primeiros `armor_length_m` metros a partir do topo (armadura parcial),
+    prática usual quando a estaca trabalha essencialmente à compressão
+    axial e não há esforços horizontais/momento relevantes na região não
+    armada - essa adequação deve ser confirmada pelo engenheiro responsável
+    (ver aviso emitido abaixo quando este parâmetro é usado)."""
+
     if geometry.diameter_cm <= 0:
         raise ValueError("Diâmetro da estaca deve ser maior que zero.")
     if cover_cm <= 0:
         raise ValueError("Cobrimento deve ser maior que zero.")
+    if armor_length_m is not None and armor_length_m <= 0:
+        raise ValueError("Profundidade de armação deve ser maior que zero.")
 
     gross_area_cm2 = geometry.area_m2 * 1e4
     rho = rho_min_pct if rho_min_pct is not None else default_rho_min_pct(geometry.diameter_cm)
@@ -136,6 +161,19 @@ def design_reinforcement(
     if axial_load_kn <= 0:
         warnings.append("Carga axial não informada/ inválida - armadura calculada apenas pela taxa mínima.")
 
+    if armor_length_m is not None:
+        if armor_length_m < confinement_length_m:
+            warnings.append(
+                f"A profundidade de armação informada ({armor_length_m:.2f} m) é menor que a "
+                f"zona de confinamento recomendada ({confinement_length_m:.2f} m) - reavalie."
+            )
+        warnings.append(
+            "Armadura parcial (não estendida por toda a profundidade da estaca) só é "
+            "adequada quando a estaca trabalha essencialmente à compressão axial, sem "
+            "esforços horizontais, momento fletor ou tração relevantes na região não "
+            "armada. Confirme essa hipótese com o engenheiro responsável antes de adotar."
+        )
+
     return ReinforcementResult(
         diameter_cm=geometry.diameter_cm,
         gross_area_cm2=gross_area_cm2,
@@ -146,5 +184,6 @@ def design_reinforcement(
         stirrup_spacing_body_cm=stirrup_spacing_body_cm,
         stirrup_spacing_top_cm=stirrup_spacing_top_cm,
         confinement_length_m=confinement_length_m,
+        requested_armor_length_m=armor_length_m,
         warnings=warnings,
     )

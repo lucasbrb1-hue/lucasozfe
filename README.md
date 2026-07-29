@@ -199,10 +199,28 @@ app `.app`/binário macOS, rode em um Mac. No Windows, use `--add-data
   variam entre autores/edições, especialmente para estacas hélice contínua e
   Strauss — os valores adotados são referências usuais de mercado e devem
   ser conferidos/calibrados pelo responsável técnico.
-- O módulo de armação calcula apenas a **armadura mínima** para estacas
-  moldadas em concreto trabalhando essencialmente à compressão axial. Não
-  contempla flexão composta, esforços horizontais, sismo, verificação ao
-  cisalhamento por carregamento lateral, nem efeitos de grupo de estacas.
+- **O software analisa apenas o esforço axial (carga vertical de
+  compressão)** transmitido à estaca. Ele NÃO verifica: esforços
+  horizontais/cortante (empuxo, vento na base, desaprumo), momento fletor,
+  tração/arrancamento, torção, efeitos de grupo de estacas (interação
+  estaca-estaca), flambagem em solos muito moles, nem ações sísmicas ou
+  dinâmicas. Qualquer estaca sujeita a esses esforços exige verificação
+  estrutural/geotécnica complementar por um engenheiro responsável (métodos
+  de estacas horizontalmente carregadas, como Broms ou p-y, não estão
+  implementados aqui).
+- O módulo de armação calcula a **armadura mínima** (longitudinal e
+  estribos) para estacas moldadas em concreto trabalhando essencialmente à
+  compressão axial - não dimensiona para flexão composta nem cisalhamento
+  por carga lateral (ver item acima).
+- **Profundidade de armação**: por padrão, a armadura longitudinal é
+  estendida por toda a profundidade da estaca (opção mais segura). É
+  possível pedir uma armadura parcial (informando o comprimento em metros na
+  aba 5 ou 6) - útil quando a estaca trabalha só à compressão axial e não há
+  esforços horizontais/momento relevantes na região não armada; o software
+  nunca deixa a armadura ultrapassar o fundo da estaca (usa sempre o menor
+  valor entre o comprimento pedido e a profundidade real de cada estaca) e
+  emite um aviso lembrando que essa hipótese deve ser confirmada pelo
+  engenheiro responsável antes de adotar.
 - Quando ambos os métodos SPT são selecionados, a profundidade necessária
   adota o **mais conservador** (menor capacidade admissível) entre os dois,
   por segurança.

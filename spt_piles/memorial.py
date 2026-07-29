@@ -138,7 +138,7 @@ def build_memorial(
 
     if reinforcement is not None:
         doc.add_heading(f"{section_n}. Armação sugerida", level=1)
-        _add_reinforcement_section(doc, reinforcement)
+        _add_reinforcement_section(doc, reinforcement, pile_depth_m=solver_result.required_depth_m)
         section_n += 1
 
     doc.add_heading(f"{section_n}. Aviso", level=1)
@@ -228,7 +228,9 @@ def _add_av_table(doc, profile: SPTProfile, geometry: PileGeometry, pile_type: s
     _add_table(doc, headers, rows)
 
 
-def _add_reinforcement_section(doc, reinforcement: ReinforcementResult) -> None:
+def _add_reinforcement_section(doc, reinforcement: ReinforcementResult, pile_depth_m: float | None = None) -> None:
+    from .reinforcement import effective_armor_length_m
+
     doc.add_paragraph("As,min = ρmin · Ag")
     _add_table(
         doc,
@@ -254,5 +256,23 @@ def _add_reinforcement_section(doc, reinforcement: ReinforcementResult) -> None:
         f"{reinforcement.stirrup_spacing_top_cm:.0f} cm na zona de confinamento (primeiros "
         f"{reinforcement.confinement_length_m:.2f} m a partir do topo)."
     )
+    if reinforcement.requested_armor_length_m is None:
+        doc.add_paragraph(
+            "Profundidade de armação: armadura longitudinal estendida por toda a profundidade da estaca."
+        )
+    else:
+        armor_line = (
+            f"Profundidade de armação: armadura longitudinal limitada a "
+            f"{reinforcement.requested_armor_length_m:.2f} m a partir do topo da estaca"
+        )
+        if pile_depth_m is not None:
+            eff = effective_armor_length_m(reinforcement, pile_depth_m)
+            armor_line += (
+                f" (estaca com {pile_depth_m:.2f} m de profundidade total; comprimento efetivo de "
+                f"armadura = {eff:.2f} m)."
+            )
+        else:
+            armor_line += " (limitada à profundidade real de cada estaca, se ela for menor que esse valor)."
+        doc.add_paragraph(armor_line)
     for w in reinforcement.warnings:
         doc.add_paragraph(f"Aviso: {w}")
