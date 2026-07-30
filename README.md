@@ -118,30 +118,41 @@ importação por IA mostram uma mensagem pedindo para configurar a chave.
 ### Como funciona a importação de esforços e a uniformização (aba 6)
 
 1. Importe os esforços de fundação por elemento (pilar, bloco ou estaca)
-   digitando manualmente, carregando um CSV
-   (`elemento,carga_caracteristica_kn,n_estacas,momento_knm,cortante_kn` -
-   as duas últimas colunas são opcionais) ou importando o PDF do relatório
+   digitando manualmente, carregando um CSV ou importando o PDF do relatório
    de cargas do seu software estrutural via IA (mesmo fluxo de revisão da
    aba 2 - os itens extraídos entram diretamente na tabela de esforços para
    você conferir/corrigir/remover antes de calcular). Momento (Mk) e
    cortante (Hk) são opcionais - sem eles, a armadura usa apenas a taxa
    mínima; com eles, veja "Dimensionamento estrutural" abaixo.
-2. **Use sempre a carga característica (Nk, de serviço)**, nunca a carga
+   O CSV aceita as colunas
+   `elemento,carga_caracteristica_kn,n_estacas,momento_knm,cortante_kn` e,
+   opcionalmente, mais quatro colunas `mx_knm,my_knm,hx_kn,hy_kn` - se
+   preenchidas, o momento/cortante resultante é calculado automaticamente
+   (√(Mx²+My²) e √(Hx²+Hy²)) e tem prioridade sobre as colunas diretas.
+2. **Quando o relatório traz M e H como componentes ortogonais** (Mx e My,
+   e/ou Fx e Fy) em vez de um valor resultante único, use os campos
+   "...ou componentes Mx, My" / "...ou Hx, Hy" na aba 5 (uma estaca) ou aba 6
+   (lote): o software calcula a resultante automaticamente
+   (√(Mx²+My²)/√(Hx²+Hy²)) - prática padrão para seções circulares, já que a
+   armadura distribuída uniformemente no perímetro resiste igual em qualquer
+   direção de flexão. Na importação por IA, essa combinação já é feita
+   automaticamente ao ler o PDF.
+3. **Use sempre a carga característica (Nk, de serviço)**, nunca a carga
    majorada de cálculo (Nd/ELU) - a capacidade admissível (Qadm) já embute o
    fator de segurança geotécnico, então a comparação correta é sempre contra
    a carga característica.
-3. Quando um bloco tiver mais de uma estaca, informe o número de estacas: o
+4. Quando um bloco tiver mais de uma estaca, informe o número de estacas: o
    software divide a carga do bloco igualmente entre elas (não considera
    excentricidade/momento - para isso, informe a carga já dividida por
    estaca e deixe "Nº de estacas" = 1).
-4. Escolha se quer **uniformizar** as profundidades. Sem uniformização, cada
+5. Escolha se quer **uniformizar** as profundidades. Sem uniformização, cada
    estaca recebe sua própria profundidade mínima necessária. Uniformizando,
    você escolhe quantos grupos/profundidades padrão deseja (ex: 3): o
    software ordena as estacas pela profundidade individual necessária,
    separa em grupos e adota, para todas as estacas de cada grupo, a maior
    profundidade individual daquele grupo - nunca uma profundidade menor do
    que a necessidade de qualquer estaca do grupo.
-5. Gere o memorial de cálculo em lote (.docx), com os esforços importados, o
+6. Gere o memorial de cálculo em lote (.docx), com os esforços importados, o
    resultado individual e adotado de cada estaca, e a armação comum adotada.
 
 ### Dimensionamento estrutural por N-M-V (flexo-compressão e cisalhamento)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -663,9 +664,33 @@ class SPTPilesApp(ttk.Frame):
         self.entry_moment.grid(row=r, column=1, sticky="w")
         r += 1
 
+        ttk.Label(grid, text="  ...ou componentes Mx, My (kN·m):").grid(row=r, column=0, sticky="w")
+        mxy_frame = ttk.Frame(grid)
+        mxy_frame.grid(row=r, column=1, columnspan=2, sticky="w")
+        self.entry_moment_x = ttk.Entry(mxy_frame, width=8)
+        self.entry_moment_x.pack(side="left", padx=2)
+        self.entry_moment_y = ttk.Entry(mxy_frame, width=8)
+        self.entry_moment_y.pack(side="left", padx=2)
+        ttk.Button(
+            mxy_frame, text="Calcular Mk = √(Mx²+My²)", command=self._compute_moment_resultant
+        ).pack(side="left", padx=6)
+        r += 1
+
         ttk.Label(grid, text="Cortante característico Hk (kN) [opcional]:").grid(row=r, column=0, sticky="w", pady=4)
         self.entry_shear = ttk.Entry(grid, width=10)
         self.entry_shear.grid(row=r, column=1, sticky="w")
+        r += 1
+
+        ttk.Label(grid, text="  ...ou componentes Hx, Hy (kN):").grid(row=r, column=0, sticky="w")
+        hxy_frame = ttk.Frame(grid)
+        hxy_frame.grid(row=r, column=1, columnspan=2, sticky="w")
+        self.entry_shear_x = ttk.Entry(hxy_frame, width=8)
+        self.entry_shear_x.pack(side="left", padx=2)
+        self.entry_shear_y = ttk.Entry(hxy_frame, width=8)
+        self.entry_shear_y.pack(side="left", padx=2)
+        ttk.Button(
+            hxy_frame, text="Calcular Hk = √(Hx²+Hy²)", command=self._compute_shear_resultant
+        ).pack(side="left", padx=6)
         r += 1
 
         ttk.Label(grid, text="fck do concreto (MPa):").grid(row=r, column=0, sticky="w", pady=4)
@@ -785,6 +810,40 @@ class SPTPilesApp(ttk.Frame):
         if result.required_depth_m is not None:
             req_y = y_for(result.required_depth_m)
             canvas.create_line(margin, req_y, width - margin, req_y, fill="#2e7d32", dash=(2, 2))
+
+    @staticmethod
+    def _resultant_from_entries(entry_x: ttk.Entry, entry_y: ttk.Entry) -> float | None:
+        x_txt = entry_x.get().strip()
+        y_txt = entry_y.get().strip()
+        if not x_txt and not y_txt:
+            return None
+        x_val = float(x_txt.replace(",", ".")) if x_txt else 0.0
+        y_val = float(y_txt.replace(",", ".")) if y_txt else 0.0
+        return math.hypot(x_val, y_val)
+
+    def _compute_moment_resultant(self) -> None:
+        try:
+            resultant = self._resultant_from_entries(self.entry_moment_x, self.entry_moment_y)
+        except ValueError as exc:
+            messagebox.showerror("Entrada inválida", str(exc))
+            return
+        if resultant is None:
+            messagebox.showinfo("Componentes vazios", "Preencha Mx e/ou My para calcular a resultante.")
+            return
+        self.entry_moment.delete(0, tk.END)
+        self.entry_moment.insert(0, f"{resultant:.3f}")
+
+    def _compute_shear_resultant(self) -> None:
+        try:
+            resultant = self._resultant_from_entries(self.entry_shear_x, self.entry_shear_y)
+        except ValueError as exc:
+            messagebox.showerror("Entrada inválida", str(exc))
+            return
+        if resultant is None:
+            messagebox.showinfo("Componentes vazios", "Preencha Hx e/ou Hy para calcular a resultante.")
+            return
+        self.entry_shear.delete(0, tk.END)
+        self.entry_shear.insert(0, f"{resultant:.3f}")
 
     def _calculate_reinforcement(self) -> None:
         if self.solver_result is None or getattr(self, "_geometry", None) is None:
@@ -1005,6 +1064,26 @@ class SPTPilesApp(ttk.Frame):
         self.entry_load_shear.grid(row=1, column=3, padx=4, pady=(4, 0))
         ttk.Button(form, text="Adicionar", command=self._add_load_row).grid(row=1, column=5, padx=6, pady=(4, 0))
 
+        ttk.Label(form, text="  ...ou Mx, My (kN·m):").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        load_mxy_frame = ttk.Frame(form)
+        load_mxy_frame.grid(row=2, column=1, columnspan=2, sticky="w", pady=(4, 0))
+        self.entry_load_moment_x = ttk.Entry(load_mxy_frame, width=8)
+        self.entry_load_moment_x.pack(side="left", padx=2)
+        self.entry_load_moment_y = ttk.Entry(load_mxy_frame, width=8)
+        self.entry_load_moment_y.pack(side="left", padx=2)
+        ttk.Label(form, text="  ...ou Hx, Hy (kN):").grid(row=2, column=3, sticky="w", pady=(4, 0))
+        load_hxy_frame = ttk.Frame(form)
+        load_hxy_frame.grid(row=2, column=4, columnspan=2, sticky="w", pady=(4, 0))
+        self.entry_load_shear_x = ttk.Entry(load_hxy_frame, width=8)
+        self.entry_load_shear_x.pack(side="left", padx=2)
+        self.entry_load_shear_y = ttk.Entry(load_hxy_frame, width=8)
+        self.entry_load_shear_y.pack(side="left", padx=2)
+        ttk.Label(
+            form,
+            text="(preencha Mx/My e/ou Hx/Hy para combinar automaticamente ao clicar Adicionar - ignora Mk/Hk diretos acima, se preenchidos)",
+            foreground="#7a4a00", wraplength=750, justify="left",
+        ).grid(row=3, column=0, columnspan=6, sticky="w", pady=(2, 0))
+
         columns = ("id", "load", "npiles", "per_pile", "moment", "shear")
         self.tree_loads = ttk.Treeview(frame, columns=columns, show="headings", height=8)
         self.tree_loads.heading("id", text="Elemento")
@@ -1071,10 +1150,20 @@ class SPTPilesApp(ttk.Frame):
             element_id = self.entry_load_id.get().strip()
             load_kn = float(self.entry_load_value.get().replace(",", "."))
             n_piles = int(float(self.entry_load_npiles.get().replace(",", ".")))
-            moment_txt = self.entry_load_moment.get().strip()
-            moment_kn_m = float(moment_txt.replace(",", ".")) if moment_txt else None
-            shear_txt = self.entry_load_shear.get().strip()
-            shear_kn = float(shear_txt.replace(",", ".")) if shear_txt else None
+            moment_resultant = self._resultant_from_entries(self.entry_load_moment_x, self.entry_load_moment_y)
+            if moment_resultant is not None:
+                moment_kn_m = moment_resultant
+            else:
+                moment_txt = self.entry_load_moment.get().strip()
+                moment_kn_m = float(moment_txt.replace(",", ".")) if moment_txt else None
+
+            shear_resultant = self._resultant_from_entries(self.entry_load_shear_x, self.entry_load_shear_y)
+            if shear_resultant is not None:
+                shear_kn = shear_resultant
+            else:
+                shear_txt = self.entry_load_shear.get().strip()
+                shear_kn = float(shear_txt.replace(",", ".")) if shear_txt else None
+
             self.load_set.add(element_id, load_kn, n_piles, moment_kn_m, shear_kn)
         except ValueError as exc:
             messagebox.showerror("Entrada inválida", str(exc))
@@ -1086,6 +1175,10 @@ class SPTPilesApp(ttk.Frame):
         self.entry_load_npiles.insert(0, "1")
         self.entry_load_moment.delete(0, tk.END)
         self.entry_load_shear.delete(0, tk.END)
+        self.entry_load_moment_x.delete(0, tk.END)
+        self.entry_load_moment_y.delete(0, tk.END)
+        self.entry_load_shear_x.delete(0, tk.END)
+        self.entry_load_shear_y.delete(0, tk.END)
 
     def _remove_load_row(self) -> None:
         selected = self.tree_loads.selection()
@@ -1134,11 +1227,30 @@ class SPTPilesApp(ttk.Frame):
             for row in rows[start:]:
                 if not row:
                     continue
+
+                def _cell(index: int) -> str:
+                    return row[index].strip() if len(row) > index else ""
+
                 element_id = row[0].strip()
                 load_kn = float(row[1].replace(",", "."))
-                n_piles = int(float(row[2])) if len(row) > 2 and row[2].strip() else 1
-                moment_kn_m = float(row[3].replace(",", ".")) if len(row) > 3 and row[3].strip() else None
-                shear_kn = float(row[4].replace(",", ".")) if len(row) > 4 and row[4].strip() else None
+                n_piles = int(float(row[2])) if _cell(2) else 1
+
+                mx_txt, my_txt = _cell(5), _cell(6)
+                if mx_txt or my_txt:
+                    mx = float(mx_txt.replace(",", ".")) if mx_txt else 0.0
+                    my = float(my_txt.replace(",", ".")) if my_txt else 0.0
+                    moment_kn_m = math.hypot(mx, my)
+                else:
+                    moment_kn_m = float(_cell(3).replace(",", ".")) if _cell(3) else None
+
+                hx_txt, hy_txt = _cell(7), _cell(8)
+                if hx_txt or hy_txt:
+                    hx = float(hx_txt.replace(",", ".")) if hx_txt else 0.0
+                    hy = float(hy_txt.replace(",", ".")) if hy_txt else 0.0
+                    shear_kn = math.hypot(hx, hy)
+                else:
+                    shear_kn = float(_cell(4).replace(",", ".")) if _cell(4) else None
+
                 new_loads.add(element_id, load_kn, n_piles, moment_kn_m, shear_kn)
             self.load_set = new_loads
             self._refresh_loads_tree()
