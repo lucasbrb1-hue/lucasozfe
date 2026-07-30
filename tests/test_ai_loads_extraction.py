@@ -58,6 +58,42 @@ class TestParseLoadsToolOutput(unittest.TestCase):
         with self.assertRaises(AIExtractionError):
             _parse_loads_tool_output({"items": []}, "x.pdf", "m")
 
+    def test_moment_and_shear_parsed_when_present(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "P1", "characteristic_load_kn": 300.0, "n_piles": 1,
+                    "moment_kn_m": 45.0, "shear_kn": 20.0, "original_description": "x",
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertAlmostEqual(result.items[0].moment_kn_m, 45.0)
+        self.assertAlmostEqual(result.items[0].shear_kn, 20.0)
+
+    def test_moment_and_shear_default_to_none_when_absent(self):
+        data = {
+            "items": [
+                {"element_id": "P1", "characteristic_load_kn": 300.0, "n_piles": 1, "original_description": "x"},
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertIsNone(result.items[0].moment_kn_m)
+        self.assertIsNone(result.items[0].shear_kn)
+
+    def test_negative_moment_and_shear_are_stored_as_absolute_value(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "P1", "characteristic_load_kn": 300.0, "n_piles": 1,
+                    "moment_kn_m": -45.0, "shear_kn": -20.0, "original_description": "x",
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertAlmostEqual(result.items[0].moment_kn_m, 45.0)
+        self.assertAlmostEqual(result.items[0].shear_kn, 20.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -75,6 +75,60 @@ class TestReinforcement(unittest.TestCase):
         with self.assertRaises(ValueError):
             design_reinforcement(geometry, axial_load_kn=500.0, armor_length_m=0)
 
+    def test_without_moment_structural_field_is_none(self):
+        geometry = PileGeometry(diameter_cm=40)
+        result = design_reinforcement(geometry, axial_load_kn=500.0)
+        self.assertIsNone(result.structural)
+
+    def test_with_moment_populates_structural_field_and_uses_load_factor(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=100.0, load_factor=1.4)
+        self.assertIsNotNone(result.structural)
+        self.assertAlmostEqual(result.structural.n_design_kn, 1.4 * 800.0)
+        self.assertAlmostEqual(result.structural.m_design_knm, 1.4 * 100.0)
+        self.assertIsNotNone(result.structural.flexo_check)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertTrue(result.structural.flexo_check.adequate)
+
+    def test_higher_moment_needs_more_reinforcement(self):
+        geometry = PileGeometry(diameter_cm=50)
+        low_m = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=20.0)
+        high_m = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=250.0)
+        self.assertIsNotNone(low_m.longitudinal)
+        self.assertIsNotNone(high_m.longitudinal)
+        self.assertGreaterEqual(high_m.longitudinal.as_provided_cm2, low_m.longitudinal.as_provided_cm2)
+
+    def test_moment_too_large_for_any_bar_combination_yields_no_longitudinal(self):
+        geometry = PileGeometry(diameter_cm=30)
+        result = design_reinforcement(geometry, axial_load_kn=200.0, moment_kn_m=5000.0)
+        self.assertIsNone(result.longitudinal)
+        self.assertTrue(any("flexo-compressão" in w or "capacidade última" in w for w in result.warnings))
+
+    def test_shear_reduces_stirrup_spacing_when_needed(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(
+            geometry, axial_load_kn=800.0, moment_kn_m=50.0, shear_kn=250.0,
+            stirrup_spacing_body_cm=20.0,
+        )
+        self.assertIsNotNone(result.structural.shear)
+        self.assertLessEqual(result.stirrup_spacing_body_cm, 20.0)
+
+    def test_shear_none_when_not_requested(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
+        self.assertIsNone(result.structural.shear)
+
+    def test_invalid_load_factor_raises(self):
+        geometry = PileGeometry(diameter_cm=40)
+        with self.assertRaises(ValueError):
+            design_reinforcement(geometry, axial_load_kn=500.0, moment_kn_m=50.0, load_factor=0)
+
+    def test_load_factor_one_uses_characteristic_as_design(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=100.0, load_factor=1.0)
+        self.assertAlmostEqual(result.structural.n_design_kn, 800.0)
+        self.assertAlmostEqual(result.structural.m_design_knm, 100.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -645,6 +645,47 @@ class SPTPilesApp(ttk.Frame):
         ).grid(row=r, column=2, sticky="w", padx=6)
         r += 1
 
+        ttk.Separator(grid, orient="horizontal").grid(row=r, column=0, columnspan=3, sticky="ew", pady=8)
+        r += 1
+        ttk.Label(
+            grid,
+            text=(
+                "Dimensionamento estrutural (opcional): informe o momento para substituir a "
+                "armadura mínima por um dimensionamento real de flexo-compressão (N-M) e "
+                "cisalhamento (V). Use sempre valores CARACTERÍSTICOS (não majorados)."
+            ),
+            wraplength=650, justify="left", foreground="#7a4a00",
+        ).grid(row=r, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        r += 1
+
+        ttk.Label(grid, text="Momento característico Mk (kN·m) [opcional]:").grid(row=r, column=0, sticky="w", pady=4)
+        self.entry_moment = ttk.Entry(grid, width=10)
+        self.entry_moment.grid(row=r, column=1, sticky="w")
+        r += 1
+
+        ttk.Label(grid, text="Cortante característico Hk (kN) [opcional]:").grid(row=r, column=0, sticky="w", pady=4)
+        self.entry_shear = ttk.Entry(grid, width=10)
+        self.entry_shear.grid(row=r, column=1, sticky="w")
+        r += 1
+
+        ttk.Label(grid, text="fck do concreto (MPa):").grid(row=r, column=0, sticky="w", pady=4)
+        self.entry_fck = ttk.Entry(grid, width=10)
+        self.entry_fck.insert(0, "25")
+        self.entry_fck.grid(row=r, column=1, sticky="w")
+        r += 1
+
+        ttk.Label(grid, text="fyk do aço (MPa):").grid(row=r, column=0, sticky="w", pady=4)
+        self.entry_fyk = ttk.Entry(grid, width=10)
+        self.entry_fyk.insert(0, "500")
+        self.entry_fyk.grid(row=r, column=1, sticky="w")
+        r += 1
+
+        ttk.Label(grid, text="Fator de majoração γf (Nk/Mk/Hk -> Nd/Md/Vd):").grid(row=r, column=0, sticky="w", pady=4)
+        self.entry_load_factor = ttk.Entry(grid, width=10)
+        self.entry_load_factor.insert(0, "1.4")
+        self.entry_load_factor.grid(row=r, column=1, sticky="w")
+        r += 1
+
         ttk.Button(grid, text="Calcular armação", command=self._calculate_reinforcement).grid(
             row=r, column=0, columnspan=2, pady=12
         )
@@ -758,6 +799,13 @@ class SPTPilesApp(ttk.Frame):
             spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
             armor_txt = self.entry_armor_length.get().strip()
             armor_length = float(armor_txt.replace(",", ".")) if armor_txt else None
+            moment_txt = self.entry_moment.get().strip()
+            moment_kn_m = float(moment_txt.replace(",", ".")) if moment_txt else None
+            shear_txt = self.entry_shear.get().strip()
+            shear_kn = float(shear_txt.replace(",", ".")) if shear_txt else None
+            fck = float(self.entry_fck.get().replace(",", "."))
+            fyk = float(self.entry_fyk.get().replace(",", "."))
+            load_factor = float(self.entry_load_factor.get().replace(",", "."))
 
             result = design_reinforcement(
                 self._geometry,
@@ -768,6 +816,11 @@ class SPTPilesApp(ttk.Frame):
                 stirrup_spacing_body_cm=spacing_body,
                 stirrup_spacing_top_cm=spacing_top,
                 armor_length_m=armor_length,
+                moment_kn_m=moment_kn_m,
+                shear_kn=shear_kn,
+                load_factor=load_factor,
+                fck_mpa=fck,
+                fyk_mpa=fyk,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Erro no cálculo de armação", str(exc))
@@ -795,6 +848,34 @@ class SPTPilesApp(ttk.Frame):
             lines.append(f"Espaçamento livre estimado entre barras: {lg.clear_spacing_cm:.1f} cm")
         else:
             lines.append("Não foi encontrada combinação padrão viável de barras - ver avisos abaixo.")
+
+        if result.structural is not None:
+            s = result.structural
+            lines.append("")
+            lines.append(
+                f"--- Dimensionamento estrutural (γf={s.load_factor:.2f}, fck={s.fck_mpa:.0f} MPa, "
+                f"fyk={s.fyk_mpa:.0f} MPa) ---"
+            )
+            fc = s.flexo_check
+            if fc is not None and fc.m_capacity_knm is not None:
+                status = "OK" if fc.adequate else "INSUFICIENTE"
+                lines.append(
+                    f"Flexo-compressão: Nd={fc.n_design_kn:.1f} kN, Md={fc.m_design_knm:.1f} kN·m, "
+                    f"Mrd={fc.m_capacity_knm:.1f} kN·m, utilização={fc.utilization * 100:.0f}% [{status}]"
+                )
+            elif fc is not None:
+                lines.append(
+                    f"Flexo-compressão: Nd={fc.n_design_kn:.1f} kN excede a capacidade última à "
+                    "compressão da seção testada [INSUFICIENTE]"
+                )
+            if s.shear is not None:
+                sh = s.shear
+                crush_status = "OK" if sh.crushing_ok else "FALHA (esmagamento da biela)"
+                lines.append(
+                    f"Cisalhamento: Vd={sh.v_design_kn:.1f} kN, Vrd2={sh.vrd2_kn:.1f} kN [{crush_status}], "
+                    f"Vc={sh.vc_kn:.1f} kN"
+                    + (f", espaçamento necessário dos estribos={sh.required_spacing_cm:.1f} cm" if sh.required_spacing_cm else "")
+                )
         lines.append("")
         lines.append(
             f"Estribos: φ{result.stirrup_diameter_mm:.1f} mm a cada {result.stirrup_spacing_body_cm:.0f} cm "
@@ -915,16 +996,25 @@ class SPTPilesApp(ttk.Frame):
         self.entry_load_npiles = ttk.Entry(form, width=6)
         self.entry_load_npiles.insert(0, "1")
         self.entry_load_npiles.grid(row=0, column=5, padx=4)
-        ttk.Button(form, text="Adicionar", command=self._add_load_row).grid(row=0, column=6, padx=6)
 
-        columns = ("id", "load", "npiles", "per_pile")
+        ttk.Label(form, text="Momento Mk (kN·m) [opcional]:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.entry_load_moment = ttk.Entry(form, width=10)
+        self.entry_load_moment.grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Label(form, text="Cortante Hk (kN) [opcional]:").grid(row=1, column=2, sticky="w", pady=(4, 0))
+        self.entry_load_shear = ttk.Entry(form, width=10)
+        self.entry_load_shear.grid(row=1, column=3, padx=4, pady=(4, 0))
+        ttk.Button(form, text="Adicionar", command=self._add_load_row).grid(row=1, column=5, padx=6, pady=(4, 0))
+
+        columns = ("id", "load", "npiles", "per_pile", "moment", "shear")
         self.tree_loads = ttk.Treeview(frame, columns=columns, show="headings", height=8)
         self.tree_loads.heading("id", text="Elemento")
         self.tree_loads.heading("load", text="Carga característica (kN)")
         self.tree_loads.heading("npiles", text="Nº estacas no bloco")
         self.tree_loads.heading("per_pile", text="Carga por estaca (kN)")
+        self.tree_loads.heading("moment", text="Mk (kN·m)")
+        self.tree_loads.heading("shear", text="Hk (kN)")
         for c in columns:
-            self.tree_loads.column(c, width=180, anchor="center")
+            self.tree_loads.column(c, width=140, anchor="center")
         self.tree_loads.pack(fill="both", expand=True, padx=8, pady=4)
 
         buttons = ttk.Frame(frame)
@@ -981,7 +1071,11 @@ class SPTPilesApp(ttk.Frame):
             element_id = self.entry_load_id.get().strip()
             load_kn = float(self.entry_load_value.get().replace(",", "."))
             n_piles = int(float(self.entry_load_npiles.get().replace(",", ".")))
-            self.load_set.add(element_id, load_kn, n_piles)
+            moment_txt = self.entry_load_moment.get().strip()
+            moment_kn_m = float(moment_txt.replace(",", ".")) if moment_txt else None
+            shear_txt = self.entry_load_shear.get().strip()
+            shear_kn = float(shear_txt.replace(",", ".")) if shear_txt else None
+            self.load_set.add(element_id, load_kn, n_piles, moment_kn_m, shear_kn)
         except ValueError as exc:
             messagebox.showerror("Entrada inválida", str(exc))
             return
@@ -990,6 +1084,8 @@ class SPTPilesApp(ttk.Frame):
         self.entry_load_value.delete(0, tk.END)
         self.entry_load_npiles.delete(0, tk.END)
         self.entry_load_npiles.insert(0, "1")
+        self.entry_load_moment.delete(0, tk.END)
+        self.entry_load_shear.delete(0, tk.END)
 
     def _remove_load_row(self) -> None:
         selected = self.tree_loads.selection()
@@ -1014,10 +1110,15 @@ class SPTPilesApp(ttk.Frame):
     def _refresh_loads_tree(self) -> None:
         self.tree_loads.delete(*self.tree_loads.get_children())
         for item in self.load_set.items:
+            moment_txt = f"{item.moment_kn_m:.1f}" if item.moment_kn_m is not None else "-"
+            shear_txt = f"{item.shear_kn:.1f}" if item.shear_kn is not None else "-"
             self.tree_loads.insert(
                 "",
                 "end",
-                values=(item.element_id, f"{item.characteristic_load_kn:.1f}", item.n_piles, f"{item.load_per_pile_kn:.1f}"),
+                values=(
+                    item.element_id, f"{item.characteristic_load_kn:.1f}", item.n_piles,
+                    f"{item.load_per_pile_kn:.1f}", moment_txt, shear_txt,
+                ),
             )
 
     def _load_loads_csv(self) -> None:
@@ -1036,7 +1137,9 @@ class SPTPilesApp(ttk.Frame):
                 element_id = row[0].strip()
                 load_kn = float(row[1].replace(",", "."))
                 n_piles = int(float(row[2])) if len(row) > 2 and row[2].strip() else 1
-                new_loads.add(element_id, load_kn, n_piles)
+                moment_kn_m = float(row[3].replace(",", ".")) if len(row) > 3 and row[3].strip() else None
+                shear_kn = float(row[4].replace(",", ".")) if len(row) > 4 and row[4].strip() else None
+                new_loads.add(element_id, load_kn, n_piles, moment_kn_m, shear_kn)
             self.load_set = new_loads
             self._refresh_loads_tree()
         except Exception as exc:  # noqa: BLE001
@@ -1051,9 +1154,13 @@ class SPTPilesApp(ttk.Frame):
             return
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["elemento", "carga_caracteristica_kn", "n_estacas"])
+            writer.writerow(["elemento", "carga_caracteristica_kn", "n_estacas", "momento_knm", "cortante_kn"])
             for item in self.load_set.items:
-                writer.writerow([item.element_id, item.characteristic_load_kn, item.n_piles])
+                writer.writerow([
+                    item.element_id, item.characteristic_load_kn, item.n_piles,
+                    item.moment_kn_m if item.moment_kn_m is not None else "",
+                    item.shear_kn if item.shear_kn is not None else "",
+                ])
 
     def _select_ai_loads_pdf(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")])
@@ -1099,7 +1206,10 @@ class SPTPilesApp(ttk.Frame):
         added = 0
         for item in result.items:
             try:
-                self.load_set.add(item.element_id, item.characteristic_load_kn, item.n_piles)
+                self.load_set.add(
+                    item.element_id, item.characteristic_load_kn, item.n_piles,
+                    item.moment_kn_m, item.shear_kn,
+                )
                 added += 1
             except ValueError:
                 continue
@@ -1156,11 +1266,14 @@ class SPTPilesApp(ttk.Frame):
             spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
             armor_txt = self.entry_armor_length.get().strip()
             armor_length = float(armor_txt.replace(",", ".")) if armor_txt else None
-            max_load = max(d.load_per_pile_kn for d in designs)
-            self.reinforcement_result = design_reinforcement(
-                geometry, axial_load_kn=max_load, cover_cm=cover, rho_min_pct=rho_min,
+            fck = float(self.entry_fck.get().replace(",", "."))
+            fyk = float(self.entry_fyk.get().replace(",", "."))
+            load_factor = float(self.entry_load_factor.get().replace(",", "."))
+            self.reinforcement_result = pg.compute_batch_reinforcement(
+                self.load_set.items, geometry, cover_cm=cover, rho_min_pct=rho_min,
                 stirrup_diameter_mm=stirrup_d, stirrup_spacing_body_cm=spacing_body,
                 stirrup_spacing_top_cm=spacing_top, armor_length_m=armor_length,
+                load_factor=load_factor, fck_mpa=fck, fyk_mpa=fyk,
             )
             self._render_reinforcement(self.reinforcement_result)
         except Exception:  # noqa: BLE001 - armação é complementar; falha aqui não impede o resultado em lote

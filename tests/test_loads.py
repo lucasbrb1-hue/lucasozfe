@@ -1,0 +1,60 @@
+import unittest
+
+from spt_piles.loads import FoundationLoad, LoadSet
+
+
+class TestFoundationLoad(unittest.TestCase):
+    def test_load_per_pile_divides_by_n_piles(self):
+        load = FoundationLoad("P1", characteristic_load_kn=900.0, n_piles=3)
+        self.assertAlmostEqual(load.load_per_pile_kn, 300.0)
+
+    def test_moment_and_shear_default_to_none(self):
+        load = FoundationLoad("P1", characteristic_load_kn=300.0)
+        self.assertIsNone(load.moment_kn_m)
+        self.assertIsNone(load.shear_kn)
+        self.assertIsNone(load.moment_per_pile_knm)
+        self.assertIsNone(load.shear_per_pile_kn)
+
+    def test_moment_and_shear_divided_by_n_piles(self):
+        load = FoundationLoad("B1", characteristic_load_kn=900.0, n_piles=3, moment_kn_m=60.0, shear_kn=30.0)
+        self.assertAlmostEqual(load.moment_per_pile_knm, 20.0)
+        self.assertAlmostEqual(load.shear_per_pile_kn, 10.0)
+
+    def test_negative_moment_raises(self):
+        with self.assertRaises(ValueError):
+            FoundationLoad("P1", characteristic_load_kn=300.0, moment_kn_m=-5.0)
+
+    def test_negative_shear_raises(self):
+        with self.assertRaises(ValueError):
+            FoundationLoad("P1", characteristic_load_kn=300.0, shear_kn=-5.0)
+
+    def test_zero_load_raises(self):
+        with self.assertRaises(ValueError):
+            FoundationLoad("P1", characteristic_load_kn=0.0)
+
+    def test_empty_id_raises(self):
+        with self.assertRaises(ValueError):
+            FoundationLoad("", characteristic_load_kn=300.0)
+
+
+class TestLoadSet(unittest.TestCase):
+    def test_add_without_moment(self):
+        loads = LoadSet()
+        loads.add("P1", 300.0)
+        self.assertFalse(loads.has_moment_data())
+
+    def test_has_moment_data_true_if_any_item_has_it(self):
+        loads = LoadSet()
+        loads.add("P1", 300.0)
+        loads.add("P2", 400.0, moment_kn_m=50.0)
+        self.assertTrue(loads.has_moment_data())
+
+    def test_is_valid(self):
+        loads = LoadSet()
+        self.assertFalse(loads.is_valid())
+        loads.add("P1", 300.0)
+        self.assertTrue(loads.is_valid())
+
+
+if __name__ == "__main__":
+    unittest.main()

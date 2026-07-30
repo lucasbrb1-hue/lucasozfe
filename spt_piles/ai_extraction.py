@@ -275,6 +275,8 @@ class ExtractedLoadItem:
     characteristic_load_kn: float
     n_piles: int
     original_description: str
+    moment_kn_m: float | None = None
+    shear_kn: float | None = None
 
 
 @dataclass
@@ -325,6 +327,24 @@ def _build_loads_tool_schema() -> dict:
                                     "não houver menção a um bloco com múltiplas estacas."
                                 ),
                             },
+                            "moment_kn_m": {
+                                "type": ["number", "null"],
+                                "description": (
+                                    "Momento fletor CARACTERÍSTICO resultante (magnitude; combine Mx e "
+                                    "My como sqrt(Mx²+My²) se ambos existirem) na cabeça do "
+                                    "pilar/bloco/estaca, em kN·m (1 tf·m ≈ 10 kN·m). null se o "
+                                    "relatório não trouxer momento para este elemento."
+                                ),
+                            },
+                            "shear_kn": {
+                                "type": ["number", "null"],
+                                "description": (
+                                    "Força cortante/horizontal CARACTERÍSTICA resultante (magnitude; "
+                                    "combine Fx e Fy como sqrt(Fx²+Fy²) se ambos existirem) na cabeça do "
+                                    "pilar/bloco/estaca, em kN. null se o relatório não trouxer força "
+                                    "horizontal para este elemento."
+                                ),
+                            },
                             "original_description": {
                                 "type": "string",
                                 "description": (
@@ -363,8 +383,13 @@ _LOADS_SYSTEM_PROMPT = (
     "tf ≈ 10 kN), registrando o valor e unidade originais em "
     "original_description. Quando o relatório indicar que um bloco tem mais de "
     "uma estaca, informe o número de estacas em n_piles; caso contrário, use "
-    "n_piles = 1. Não invente valores não legíveis - prefira omitir a linha. "
-    "Responda chamando a ferramenta fornecida."
+    "n_piles = 1. Se o relatório também trouxer momento fletor (Mx, My ou momento "
+    "resultante) e/ou força horizontal/cortante (Fx, Fy ou cortante resultante) na "
+    "cabeça do elemento, extraia-os também (sempre característicos, nunca "
+    "majorados; combine componentes ortogonais pela raiz da soma dos quadrados) - "
+    "caso não existam no relatório, deixe moment_kn_m e shear_kn como null, não "
+    "invente. Não invente valores não legíveis - prefira omitir a linha. Responda "
+    "chamando a ferramenta fornecida."
 )
 
 
@@ -394,12 +419,21 @@ def _parse_loads_tool_output(data: dict, pdf_path: str, model_name: str) -> Extr
             n_piles = int(item.get("n_piles", 1) or 1)
             if n_piles <= 0:
                 n_piles = 1
+
+            moment_kn_m = item.get("moment_kn_m")
+            moment_kn_m = abs(float(moment_kn_m)) if moment_kn_m is not None else None
+
+            shear_kn = item.get("shear_kn")
+            shear_kn = abs(float(shear_kn)) if shear_kn is not None else None
+
             items.append(
                 ExtractedLoadItem(
                     element_id=element_id,
                     characteristic_load_kn=load_kn,
                     n_piles=n_piles,
                     original_description=str(item.get("original_description", "")),
+                    moment_kn_m=moment_kn_m,
+                    shear_kn=shear_kn,
                 )
             )
         except (KeyError, TypeError, ValueError):

@@ -2,12 +2,19 @@
 transversal), com base em práticas usuais associadas à NBR 6118 (Projeto de
 estruturas de concreto) e NBR 6122 (Projeto e execução de fundações).
 
-IMPORTANTE: estacas moldadas em concreto trabalhando à compressão axial são,
-em geral, dimensionadas estruturalmente pela armadura mínima (a resistência
-à compressão fica a cargo do concreto). Este módulo NÃO realiza verificação
-de flexão composta, esforços horizontais, sismo ou choque - apenas o cálculo
-de armadura mínima usual e uma sugestão construtiva de bitolas/estribos.
-Projeto executivo deve ser assinado por engenheiro responsável (ART/RRT).
+Por padrão (sem informar momento/cortante), a armadura é dimensionada apenas
+pela taxa mínima - válido quando a estaca trabalha essencialmente à
+compressão axial (a resistência à compressão fica a cargo do concreto).
+
+Quando o momento fletor característico (`moment_kn_m`) é informado, o
+dimensionamento passa a ser estrutural de verdade: verificação de
+flexo-compressão (interação N-M) via `structural_design.py`, escolhendo a
+menor combinação de barras que atenda simultaneamente a taxa mínima E a
+capacidade resistente da seção. Quando o cortante característico
+(`shear_kn`) também é informado, os estribos são dimensionados ao
+cisalhamento (Modelo de Cálculo I da NBR 6118), reduzindo o espaçamento
+construtivo se necessário. Projeto executivo deve ser assinado por
+engenheiro responsável (ART/RRT).
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ import math
 from dataclasses import dataclass, field
 
 from .models import PileGeometry
+from .structural_design import FlexoCompressionCheck, ShearDesign, check_flexo_compression, design_shear
 
 BAR_DIAMETERS_MM = [8.0, 10.0, 12.5, 16.0, 20.0, 25.0, 32.0]
 STIRRUP_DIAMETERS_MM = [5.0, 6.3, 8.0, 10.0]
@@ -52,6 +60,21 @@ class LongitudinalDesign:
 
 
 @dataclass
+class StructuralDesignInfo:
+    """Resumo do dimensionamento estrutural (N-M-V) quando momento/cortante
+    são informados - ver structural_design.py para o método e hipóteses."""
+
+    n_design_kn: float
+    m_design_knm: float
+    v_design_kn: float | None
+    load_factor: float
+    fck_mpa: float
+    fyk_mpa: float
+    flexo_check: FlexoCompressionCheck | None
+    shear: ShearDesign | None
+
+
+@dataclass
 class ReinforcementResult:
     diameter_cm: float
     gross_area_cm2: float
@@ -63,6 +86,7 @@ class ReinforcementResult:
     stirrup_spacing_top_cm: float
     confinement_length_m: float
     requested_armor_length_m: float | None = None
+    structural: StructuralDesignInfo | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -115,6 +139,57 @@ def _try_design(
     return None
 
 
+def _try_design_with_structural_check(
+    geometry: PileGeometry,
+    cover_cm: float,
+    stirrup_diameter_mm: float,
+    as_min_cm2: float,
+    fck_mpa: float,
+    fyk_mpa: float,
+    n_design_kn: float,
+    m_design_knm: float,
+) -> tuple[LongitudinalDesign | None, FlexoCompressionCheck | None]:
+    """Como `_try_design`, mas também exige que a combinação de barras resista
+    à flexo-compressão (N-M) de cálculo, não só à taxa mínima. Retorna a
+    menor combinação viável e a última verificação tentada (para diagnóstico
+    quando nenhuma combinação for suficiente)."""
+
+    radius_cm = geometry.diameter_cm / 2.0
+    last_check: FlexoCompressionCheck | None = None
+
+    for bar_diameter_mm in BAR_DIAMETERS_MM:
+        bar_cm = bar_diameter_mm / 10.0
+        bar_center_radius = radius_cm - cover_cm - (stirrup_diameter_mm / 10.0) - bar_cm / 2.0
+        if bar_center_radius <= 0:
+            continue
+        min_spacing = _min_clear_spacing_cm(bar_diameter_mm)
+
+        for n_bars in range(MIN_BARS, MAX_BARS + 1):
+            as_provided = n_bars * _bar_area_cm2(bar_diameter_mm)
+            if as_provided < as_min_cm2:
+                continue
+            circumference = 2 * math.pi * bar_center_radius
+            clear_spacing = circumference / n_bars - bar_cm
+            if clear_spacing < min_spacing:
+                continue
+
+            check = check_flexo_compression(
+                geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars,
+                fck_mpa, fyk_mpa, n_design_kn, m_design_knm,
+            )
+            last_check = check
+            if check.adequate:
+                design = LongitudinalDesign(
+                    bar_diameter_mm=bar_diameter_mm,
+                    n_bars=n_bars,
+                    as_provided_cm2=as_provided,
+                    clear_spacing_cm=clear_spacing,
+                    feasible=True,
+                )
+                return design, check
+    return None, last_check
+
+
 def design_reinforcement(
     geometry: PileGeometry,
     axial_load_kn: float,
@@ -125,6 +200,11 @@ def design_reinforcement(
     stirrup_spacing_top_cm: float = 10.0,
     confinement_length_factor: float = 3.0,
     armor_length_m: float | None = None,
+    moment_kn_m: float | None = None,
+    shear_kn: float | None = None,
+    load_factor: float = 1.4,
+    fck_mpa: float = 25.0,
+    fyk_mpa: float = 500.0,
 ) -> ReinforcementResult:
     """`armor_length_m`: comprimento desejado de armadura longitudinal a
     partir do topo da estaca. None (padrão) arma toda a extensão da estaca -
@@ -133,7 +213,18 @@ def design_reinforcement(
     prática usual quando a estaca trabalha essencialmente à compressão
     axial e não há esforços horizontais/momento relevantes na região não
     armada - essa adequação deve ser confirmada pelo engenheiro responsável
-    (ver aviso emitido abaixo quando este parâmetro é usado)."""
+    (ver aviso emitido abaixo quando este parâmetro é usado).
+
+    `moment_kn_m`/`shear_kn`: momento fletor e força cortante CARACTERÍSTICOS
+    (de serviço, mesma base que `axial_load_kn`) na cabeça da estaca. Quando
+    `moment_kn_m` é informado, a armadura longitudinal deixa de ser apenas a
+    mínima e passa a ser dimensionada pela verificação de flexo-compressão
+    (N-M) da seção circular (ver structural_design.py); se `shear_kn`
+    também for informado, os estribos são dimensionados ao cisalhamento.
+    `load_factor` (γf, padrão 1,4) converte os esforços característicos em
+    esforços de cálculo (Nd, Md, Vd) para essa verificação estrutural -
+    ajuste se seu software já fornecer valores majorados (nesse caso use
+    load_factor=1.0)."""
 
     if geometry.diameter_cm <= 0:
         raise ValueError("Diâmetro da estaca deve ser maior que zero.")
@@ -141,20 +232,85 @@ def design_reinforcement(
         raise ValueError("Cobrimento deve ser maior que zero.")
     if armor_length_m is not None and armor_length_m <= 0:
         raise ValueError("Profundidade de armação deve ser maior que zero.")
+    if load_factor <= 0:
+        raise ValueError("Fator de majoração (γf) deve ser maior que zero.")
 
     gross_area_cm2 = geometry.area_m2 * 1e4
     rho = rho_min_pct if rho_min_pct is not None else default_rho_min_pct(geometry.diameter_cm)
     as_min_cm2 = (rho / 100.0) * gross_area_cm2
 
     warnings: list[str] = []
-    longitudinal = _try_design(geometry, cover_cm, stirrup_diameter_mm, as_min_cm2)
-    if longitudinal is None:
-        warnings.append(
-            "Não foi possível encontrar uma combinação padrão de barras que respeite o "
-            "espaçamento mínimo com o cobrimento informado. Avalie aumentar o diâmetro "
-            "da estaca, reduzir o cobrimento (respeitando o mínimo normativo) ou revisar "
-            "manualmente a disposição das barras."
+    structural: StructuralDesignInfo | None = None
+    adjusted_stirrup_spacing_body_cm = stirrup_spacing_body_cm
+
+    if moment_kn_m is not None:
+        n_design_kn = load_factor * max(axial_load_kn, 0.0)
+        m_design_knm = load_factor * moment_kn_m
+        longitudinal, flexo_check = _try_design_with_structural_check(
+            geometry, cover_cm, stirrup_diameter_mm, as_min_cm2, fck_mpa, fyk_mpa,
+            n_design_kn, m_design_knm,
         )
+        if longitudinal is None:
+            if flexo_check is None:
+                warnings.append(
+                    "Não foi possível encontrar uma combinação padrão de barras que respeite o "
+                    "espaçamento mínimo com o cobrimento informado."
+                )
+            elif flexo_check.m_capacity_knm is None:
+                warnings.append(
+                    f"Mesmo com a maior combinação de barras testada, a força normal de cálculo "
+                    f"(Nd={n_design_kn:.1f} kN) excede a capacidade última à compressão da seção - "
+                    "aumente o diâmetro da estaca ou o fck do concreto."
+                )
+            else:
+                warnings.append(
+                    f"Nenhuma combinação padrão de barras resiste à flexo-compressão de cálculo "
+                    f"(Nd={n_design_kn:.1f} kN, Md={m_design_knm:.1f} kN·m; melhor capacidade "
+                    f"encontrada Mrd={flexo_check.m_capacity_knm:.1f} kN·m). Aumente o diâmetro da "
+                    "estaca, o fck do concreto, ou revise os esforços de cálculo."
+                )
+        else:
+            warnings.append(
+                f"Armadura longitudinal dimensionada pela verificação de flexo-compressão "
+                f"(Nd={n_design_kn:.1f} kN, Md={m_design_knm:.1f} kN·m; utilização "
+                f"{flexo_check.utilization * 100:.0f}% da capacidade Mrd={flexo_check.m_capacity_knm:.1f} "
+                "kN·m) - ver structural_design.py para o método e as hipóteses adotadas. Resultado "
+                "numérico de pré-dimensionamento: confira de forma independente antes de executar."
+            )
+
+        shear_result: ShearDesign | None = None
+        if shear_kn is not None:
+            v_design_kn = load_factor * shear_kn
+            shear_result = design_shear(geometry, v_design_kn, stirrup_diameter_mm, fck_mpa, fyk_mpa)
+            warnings.extend(shear_result.warnings)
+            if shear_result.required_spacing_cm is not None:
+                if shear_result.required_spacing_cm < adjusted_stirrup_spacing_body_cm:
+                    adjusted_stirrup_spacing_body_cm = shear_result.required_spacing_cm
+                    warnings.append(
+                        f"Espaçamento dos estribos no corpo da estaca reduzido para "
+                        f"{adjusted_stirrup_spacing_body_cm:.1f} cm (era {stirrup_spacing_body_cm:.1f} cm) "
+                        f"para resistir ao cortante de cálculo Vd={v_design_kn:.1f} kN."
+                    )
+
+        structural = StructuralDesignInfo(
+            n_design_kn=n_design_kn,
+            m_design_knm=m_design_knm,
+            v_design_kn=(load_factor * shear_kn if shear_kn is not None else None),
+            load_factor=load_factor,
+            fck_mpa=fck_mpa,
+            fyk_mpa=fyk_mpa,
+            flexo_check=flexo_check,
+            shear=shear_result,
+        )
+    else:
+        longitudinal = _try_design(geometry, cover_cm, stirrup_diameter_mm, as_min_cm2)
+        if longitudinal is None:
+            warnings.append(
+                "Não foi possível encontrar uma combinação padrão de barras que respeite o "
+                "espaçamento mínimo com o cobrimento informado. Avalie aumentar o diâmetro "
+                "da estaca, reduzir o cobrimento (respeitando o mínimo normativo) ou revisar "
+                "manualmente a disposição das barras."
+            )
 
     confinement_length_m = confinement_length_factor * geometry.diameter_m
 
@@ -181,9 +337,10 @@ def design_reinforcement(
         as_min_cm2=as_min_cm2,
         longitudinal=longitudinal,
         stirrup_diameter_mm=stirrup_diameter_mm,
-        stirrup_spacing_body_cm=stirrup_spacing_body_cm,
+        stirrup_spacing_body_cm=adjusted_stirrup_spacing_body_cm,
         stirrup_spacing_top_cm=stirrup_spacing_top_cm,
         confinement_length_m=confinement_length_m,
+        structural=structural,
         requested_armor_length_m=armor_length_m,
         warnings=warnings,
     )

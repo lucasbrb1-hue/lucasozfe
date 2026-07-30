@@ -15,7 +15,7 @@ from .ai_extraction import ExtractedSPTReport
 from .depth_solver import METHOD_AV, METHOD_BOTH, METHOD_DQ, DepthSolverResult
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
-from .reinforcement import ReinforcementResult
+from .reinforcement import ReinforcementResult, StructuralDesignInfo
 from .soil_data import get_soil
 
 DISCLAIMER = (
@@ -250,6 +250,10 @@ def _add_reinforcement_section(doc, reinforcement: ReinforcementResult, pile_dep
         )
     else:
         doc.add_paragraph("Não foi encontrada combinação padrão viável de barras dentro dos limites adotados.")
+
+    if reinforcement.structural is not None:
+        _add_structural_design_section(doc, reinforcement.structural)
+
     doc.add_paragraph(
         f"Estribos: φ{reinforcement.stirrup_diameter_mm:.1f} mm a cada "
         f"{reinforcement.stirrup_spacing_body_cm:.0f} cm no corpo da estaca, e a cada "
@@ -276,3 +280,38 @@ def _add_reinforcement_section(doc, reinforcement: ReinforcementResult, pile_dep
         doc.add_paragraph(armor_line)
     for w in reinforcement.warnings:
         doc.add_paragraph(f"Aviso: {w}")
+
+
+def _add_structural_design_section(doc, structural: StructuralDesignInfo) -> None:
+    doc.add_paragraph(
+        f"Dimensionamento estrutural (flexo-compressão N-M e cisalhamento V), com γf = "
+        f"{structural.load_factor:.2f}, fck = {structural.fck_mpa:.0f} MPa, fyk = "
+        f"{structural.fyk_mpa:.0f} MPa - método numérico do diagrama de interação da seção "
+        "circular (ver structural_design.py para as hipóteses; resultado de "
+        "pré-dimensionamento, a confirmar de forma independente antes de executar)."
+    )
+    fc = structural.flexo_check
+    if fc is not None:
+        rows = [
+            ["Força normal de cálculo (Nd)", f"{fc.n_design_kn:.1f} kN"],
+            ["Momento de cálculo (Md)", f"{fc.m_design_knm:.1f} kN·m"],
+        ]
+        if fc.m_capacity_knm is not None:
+            rows.append(["Capacidade de momento na seção (Mrd)", f"{fc.m_capacity_knm:.1f} kN·m"])
+            rows.append(["Utilização (Md/Mrd)", f"{fc.utilization * 100:.0f} %"])
+            rows.append(["Verificação", "OK" if fc.adequate else "INSUFICIENTE"])
+        else:
+            rows.append(["Verificação", "Nd excede a capacidade última à compressão da seção"])
+        _add_table(doc, ["Flexo-compressão", "Valor"], rows)
+
+    if structural.shear is not None:
+        sh = structural.shear
+        rows = [
+            ["Força cortante de cálculo (Vd)", f"{sh.v_design_kn:.1f} kN"],
+            ["Resistência da biela de concreto (Vrd2)", f"{sh.vrd2_kn:.1f} kN"],
+            ["Verificação ao esmagamento", "OK" if sh.crushing_ok else "FALHA"],
+            ["Contribuição do concreto (Vc)", f"{sh.vc_kn:.1f} kN"],
+        ]
+        if sh.required_spacing_cm is not None:
+            rows.append(["Espaçamento de estribos necessário", f"{sh.required_spacing_cm:.1f} cm"])
+        _add_table(doc, ["Cisalhamento", "Valor"], rows)

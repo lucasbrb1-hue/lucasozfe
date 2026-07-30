@@ -110,6 +110,38 @@ class TestMemorial(unittest.TestCase):
             self.assertIn("limitada a 6.00 m", full_text)
             self.assertIn("comprimento efetivo de armadura", full_text)
 
+    def test_build_memorial_reports_structural_design_when_moment_given(self):
+        from spt_piles.memorial import build_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=50)
+        solver_result = ds.solve(profile, geometry, "pre_moldada", load_kn=600.0, method=ds.METHOD_DQ)
+        reinforcement = design_reinforcement(geometry, axial_load_kn=600.0, moment_kn_m=80.0, shear_kn=60.0)
+        self.assertIsNotNone(reinforcement.structural)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "memorial.docx")
+            build_memorial(out_path, profile, geometry, "pre_moldada", solver_result, reinforcement, safety_factor=2.0)
+            full_text = _all_text(docx.Document(out_path))
+            self.assertIn("Dimensionamento estrutural", full_text)
+            self.assertIn("Força normal de cálculo (Nd)", full_text)
+            self.assertIn("Força cortante de cálculo (Vd)", full_text)
+            self.assertIn(f"{reinforcement.structural.flexo_check.utilization * 100:.0f} %", full_text)
+
+    def test_build_memorial_without_moment_has_no_structural_section(self):
+        from spt_piles.memorial import build_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=40)
+        solver_result = ds.solve(profile, geometry, "pre_moldada", load_kn=300.0, method=ds.METHOD_DQ)
+        reinforcement = design_reinforcement(geometry, axial_load_kn=300.0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "memorial.docx")
+            build_memorial(out_path, profile, geometry, "pre_moldada", solver_result, reinforcement, safety_factor=2.0)
+            full_text = _all_text(docx.Document(out_path))
+            self.assertNotIn("Dimensionamento estrutural", full_text)
+
 
 if __name__ == "__main__":
     unittest.main()

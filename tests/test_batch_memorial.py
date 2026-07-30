@@ -14,6 +14,7 @@ from spt_piles import pile_group as pg
 from spt_piles.loads import FoundationLoad
 from spt_piles.models import PileGeometry, SPTProfile
 from spt_piles.reinforcement import design_reinforcement
+from spt_piles.pile_group import compute_batch_reinforcement
 
 
 def build_profile() -> SPTProfile:
@@ -131,6 +132,30 @@ class TestBatchMemorial(unittest.TestCase):
                 expected = f"{effective_armor_length_m(reinforcement, d.adopted_depth_m):.2f}"
                 self.assertIn(expected, text)
             self.assertIn("Compr. armadura (m)", text)
+
+    def test_batch_memorial_reports_structural_design_when_moment_given(self):
+        from spt_piles.batch_memorial import build_batch_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=50)
+        loads = [
+            FoundationLoad("P1", 300.0, moment_kn_m=10.0),
+            FoundationLoad("P2", 700.0, moment_kn_m=150.0, shear_kn=60.0),
+        ]
+        designs = pg.compute_individual_designs(loads, profile, geometry, "pre_moldada", method=ds.METHOD_DQ)
+        pg.apply_no_uniformization(designs)
+        reinforcement = compute_batch_reinforcement(loads, geometry)
+        self.assertIsNotNone(reinforcement.structural)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "batch.docx")
+            build_batch_memorial(
+                out_path, loads, designs, profile, geometry, "pre_moldada", ds.METHOD_DQ,
+                safety_factor=2.0, reinforcement=reinforcement, uniformized=False,
+            )
+            text = _all_text(docx.Document(out_path))
+            self.assertIn("Dimensionamento estrutural", text)
+            self.assertIn("P2", text)
 
 
 if __name__ == "__main__":

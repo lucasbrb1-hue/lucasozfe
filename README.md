@@ -7,8 +7,12 @@ estacas a partir de um perfil de sondagem SPT (Standard Penetration Test):
   métodos semi-empíricos **Décourt-Quaresma** e/ou **Aoki-Velloso**.
 - Determina a **profundidade mínima** de estaca que atende a uma carga de
   projeto informada.
-- Sugere a **armação** (barras longitudinais e estribos) com base em taxas
-  mínimas de armadura usuais associadas à NBR 6118 / NBR 6122.
+- Sugere a **armação** (barras longitudinais e estribos): por padrão, pela
+  taxa mínima usual associada à NBR 6118/NBR 6122; quando o momento fletor
+  (Mk) característico é informado, dimensiona de verdade por **interação
+  N-M (flexo-compressão)** e, se o cortante (Hk) também for informado,
+  dimensiona os estribos ao **cisalhamento** - ver "Dimensionamento
+  estrutural" abaixo.
 - Suporta os tipos de estaca: hélice contínua, escavada (broca), pré-moldada
   cravada e Strauss.
 - **Interpreta laudos de sondagem SPT em PDF via IA** (API da Claude,
@@ -44,13 +48,15 @@ spt_piles/
   aoki_velloso.py         método de Aoki-Velloso
   depth_solver.py         busca da profundidade mínima que atende a carga
   reinforcement.py         dimensionamento da armação
-  ai_extraction.py          interpretação de laudos SPT e relatórios de esforços (PDF) via API da Claude
-  memorial.py                geração do memorial de cálculo completo (.docx) de uma estaca
-  loads.py                    esforços de fundação por elemento (pilar/bloco/estaca)
-  pile_group.py                cálculo em lote por estaca e uniformização (agrupamento)
-  batch_memorial.py             memorial de cálculo (.docx) do lote de estacas
-  report.py                      geração de relatório resumido em texto
-  gui.py                          interface gráfica (Tkinter)
+  structural_design.py       flexo-compressão (N-M) e cisalhamento (V) da seção circular
+  ai_extraction.py            interpretação de laudos SPT e relatórios de esforços (PDF) via API da Claude
+  config.py                    configuração local do usuário (chave de API)
+  memorial.py                   geração do memorial de cálculo completo (.docx) de uma estaca
+  loads.py                       esforços de fundação por elemento (pilar/bloco/estaca)
+  pile_group.py                   cálculo em lote por estaca, uniformização e armação em lote
+  batch_memorial.py                memorial de cálculo (.docx) do lote de estacas
+  report.py                         geração de relatório resumido em texto
+  gui.py                             interface gráfica (Tkinter)
 main.py                      ponto de entrada
 tests/                        testes unitários (unittest)
 ```
@@ -112,11 +118,14 @@ importação por IA mostram uma mensagem pedindo para configurar a chave.
 ### Como funciona a importação de esforços e a uniformização (aba 6)
 
 1. Importe os esforços de fundação por elemento (pilar, bloco ou estaca)
-   digitando manualmente, carregando um CSV (`elemento,carga_caracteristica_kn,n_estacas`)
-   ou importando o PDF do relatório de cargas do seu software estrutural via
-   IA (mesmo fluxo de revisão da aba 2 - os itens extraídos entram
-   diretamente na tabela de esforços para você conferir/corrigir/remover
-   antes de calcular).
+   digitando manualmente, carregando um CSV
+   (`elemento,carga_caracteristica_kn,n_estacas,momento_knm,cortante_kn` -
+   as duas últimas colunas são opcionais) ou importando o PDF do relatório
+   de cargas do seu software estrutural via IA (mesmo fluxo de revisão da
+   aba 2 - os itens extraídos entram diretamente na tabela de esforços para
+   você conferir/corrigir/remover antes de calcular). Momento (Mk) e
+   cortante (Hk) são opcionais - sem eles, a armadura usa apenas a taxa
+   mínima; com eles, veja "Dimensionamento estrutural" abaixo.
 2. **Use sempre a carga característica (Nk, de serviço)**, nunca a carga
    majorada de cálculo (Nd/ELU) - a capacidade admissível (Qadm) já embute o
    fator de segurança geotécnico, então a comparação correta é sempre contra
@@ -134,6 +143,37 @@ importação por IA mostram uma mensagem pedindo para configurar a chave.
    que a necessidade de qualquer estaca do grupo.
 5. Gere o memorial de cálculo em lote (.docx), com os esforços importados, o
    resultado individual e adotado de cada estaca, e a armação comum adotada.
+
+### Dimensionamento estrutural por N-M-V (flexo-compressão e cisalhamento)
+
+Quando você informa o momento fletor característico (Mk, aba 5 ou 6), a
+armadura longitudinal deixa de ser calculada apenas pela taxa mínima e passa
+a ser dimensionada de verdade:
+
+- **Flexo-compressão (N-M)**: o diagrama de interação da seção circular é
+  construído numericamente (método das fibras, bloco retangular de tensões
+  da NBR 6118), e o software busca a menor combinação de barras que resista
+  à força normal e ao momento de cálculo (Nd, Md). No lote (aba 6), a mesma
+  armadura é verificada contra o Nd/Md de **todas** as estacas importadas
+  simultaneamente - a mais exigente é reportada como "estaca governante".
+- **Cisalhamento (V)**: se você também informar o cortante característico
+  (Hk), os estribos são dimensionados pelo Modelo de Cálculo I da NBR 6118
+  (largura/altura útil equivalentes usuais para seção circular: bw = D,
+  d = 0,8·D), reduzindo o espaçamento construtivo se necessário.
+- **Fator de majoração (γf)**: informe sempre esforços **característicos**
+  (Nk, Mk, Hk) - o software aplica γf (padrão 1,4, ajustável) para obter os
+  esforços de cálculo (Nd, Md, Vd) usados na verificação estrutural. Se seu
+  software estrutural já fornecer valores majorados, ajuste γf para 1,0.
+- **fck e fyk** são configuráveis na aba 5 (padrão 25 MPa e 500 MPa/CA-50).
+
+> ⚠️ **Este é um cálculo numérico aproximado** (ver `structural_design.py`
+> para o método completo e as simplificações assumidas, como o modelo de
+> cisalhamento e a extrapolação do bloco retangular de tensões na região de
+> compressão quase centrada). Ele foi validado contra limites teóricos
+> conhecidos (ex: capacidade à compressão pura), mas **deve ser conferido de
+> forma independente** (cálculo manual, ábacos ou software estrutural
+> dedicado) por um engenheiro responsável antes de qualquer execução -
+> especialmente para estacas fortemente solicitadas à flexão.
 
 ## Rodando os testes
 
@@ -199,19 +239,21 @@ app `.app`/binário macOS, rode em um Mac. No Windows, use `--add-data
   variam entre autores/edições, especialmente para estacas hélice contínua e
   Strauss — os valores adotados são referências usuais de mercado e devem
   ser conferidos/calibrados pelo responsável técnico.
-- **O software analisa apenas o esforço axial (carga vertical de
-  compressão)** transmitido à estaca. Ele NÃO verifica: esforços
-  horizontais/cortante (empuxo, vento na base, desaprumo), momento fletor,
-  tração/arrancamento, torção, efeitos de grupo de estacas (interação
-  estaca-estaca), flambagem em solos muito moles, nem ações sísmicas ou
-  dinâmicas. Qualquer estaca sujeita a esses esforços exige verificação
-  estrutural/geotécnica complementar por um engenheiro responsável (métodos
-  de estacas horizontalmente carregadas, como Broms ou p-y, não estão
-  implementados aqui).
-- O módulo de armação calcula a **armadura mínima** (longitudinal e
-  estribos) para estacas moldadas em concreto trabalhando essencialmente à
-  compressão axial - não dimensiona para flexão composta nem cisalhamento
-  por carga lateral (ver item acima).
+- **A capacidade de carga do solo (Qadm, aba 4) considera apenas o esforço
+  axial** (carga vertical de compressão) - os métodos semi-empíricos
+  (Décourt-Quaresma, Aoki-Velloso) não verificam capacidade geotécnica a
+  esforços horizontais (empuxo, vento, desaprumo), tração/arrancamento,
+  efeitos de grupo de estacas, flambagem em solos muito moles, nem ações
+  sísmicas/dinâmicas - isso exige verificação geotécnica complementar por um
+  engenheiro responsável (métodos de estaca horizontalmente carregada, como
+  Broms ou p-y, não estão implementados).
+- **A armadura (aba 5/6) pode considerar momento e cortante**, se
+  informados (ver "Dimensionamento estrutural" acima) - nesse caso ela deixa
+  de ser só a taxa mínima e passa a ser dimensionada por flexo-compressão
+  (N-M) e cisalhamento (V). Sem momento informado, a armadura continua sendo
+  apenas a taxa mínima (válida só para estacas essencialmente à compressão
+  axial). Em nenhum dos dois casos há verificação de torção nem de efeitos
+  de grupo entre estacas vizinhas.
 - **Profundidade de armação**: por padrão, a armadura longitudinal é
   estendida por toda a profundidade da estaca (opção mais segura). É
   possível pedir uma armadura parcial (informando o comprimento em metros na
