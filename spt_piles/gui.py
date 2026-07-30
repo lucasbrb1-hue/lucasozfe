@@ -22,6 +22,7 @@ from .loads import FoundationLoad, LoadSet
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
 from .reinforcement import STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
+from .structural_design import GAMMA_C_CONCRETE_PILE
 from .soil_data import get_soil, soil_options
 
 METHOD_LABELS = {
@@ -711,6 +712,19 @@ class SPTPilesApp(ttk.Frame):
         self.entry_load_factor.grid(row=r, column=1, sticky="w")
         r += 1
 
+        ttk.Label(
+            grid, text="Coef. de ponderação do concreto γc (estacas, NBR 6122:2022 8.6.3):"
+        ).grid(row=r, column=0, sticky="w", pady=4)
+        self.entry_gamma_c = ttk.Entry(grid, width=10)
+        self.entry_gamma_c.insert(0, str(GAMMA_C_CONCRETE_PILE))
+        self.entry_gamma_c.grid(row=r, column=1, sticky="w")
+        ttk.Label(
+            grid,
+            text="  padrão conservador p/ moldada in loco; use 1.4 para pré-moldada c/ controle de fábrica",
+            foreground="#666666",
+        ).grid(row=r, column=2, sticky="w", padx=6)
+        r += 1
+
         ttk.Button(grid, text="Calcular armação", command=self._calculate_reinforcement).grid(
             row=r, column=0, columnspan=2, pady=12
         )
@@ -865,6 +879,7 @@ class SPTPilesApp(ttk.Frame):
             fck = float(self.entry_fck.get().replace(",", "."))
             fyk = float(self.entry_fyk.get().replace(",", "."))
             load_factor = float(self.entry_load_factor.get().replace(",", "."))
+            gamma_c = float(self.entry_gamma_c.get().replace(",", "."))
 
             result = design_reinforcement(
                 self._geometry,
@@ -880,6 +895,7 @@ class SPTPilesApp(ttk.Frame):
                 load_factor=load_factor,
                 fck_mpa=fck,
                 fyk_mpa=fyk,
+                gamma_c=gamma_c,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Erro no cálculo de armação", str(exc))
@@ -912,8 +928,8 @@ class SPTPilesApp(ttk.Frame):
             s = result.structural
             lines.append("")
             lines.append(
-                f"--- Dimensionamento estrutural (γf={s.load_factor:.2f}, fck={s.fck_mpa:.0f} MPa, "
-                f"fyk={s.fyk_mpa:.0f} MPa) ---"
+                f"--- Dimensionamento estrutural (γf={s.load_factor:.2f}, γc={s.gamma_c:.2f}, "
+                f"fck={s.fck_mpa:.0f} MPa, fyk={s.fyk_mpa:.0f} MPa) ---"
             )
             fc = s.flexo_check
             if fc is not None and fc.m_capacity_knm is not None:
@@ -1413,11 +1429,12 @@ class SPTPilesApp(ttk.Frame):
             fck = float(self.entry_fck.get().replace(",", "."))
             fyk = float(self.entry_fyk.get().replace(",", "."))
             load_factor = float(self.entry_load_factor.get().replace(",", "."))
+            gamma_c = float(self.entry_gamma_c.get().replace(",", "."))
             self.reinforcement_result = pg.compute_batch_reinforcement(
                 self.load_set.items, geometry, cover_cm=cover, rho_min_pct=rho_min,
                 stirrup_diameter_mm=stirrup_d, stirrup_spacing_body_cm=spacing_body,
                 stirrup_spacing_top_cm=spacing_top, armor_length_m=armor_length,
-                load_factor=load_factor, fck_mpa=fck, fyk_mpa=fyk,
+                load_factor=load_factor, fck_mpa=fck, fyk_mpa=fyk, gamma_c=gamma_c,
             )
             self._render_reinforcement(self.reinforcement_result)
         except Exception:  # noqa: BLE001 - armação é complementar; falha aqui não impede o resultado em lote

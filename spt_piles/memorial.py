@@ -285,10 +285,12 @@ def _add_reinforcement_section(doc, reinforcement: ReinforcementResult, pile_dep
 def _add_structural_design_section(doc, structural: StructuralDesignInfo) -> None:
     doc.add_paragraph(
         f"Dimensionamento estrutural (flexo-compressão N-M e cisalhamento V), com γf = "
-        f"{structural.load_factor:.2f}, fck = {structural.fck_mpa:.0f} MPa, fyk = "
-        f"{structural.fyk_mpa:.0f} MPa - método numérico do diagrama de interação da seção "
-        "circular (ver structural_design.py para as hipóteses; resultado de "
-        "pré-dimensionamento, a confirmar de forma independente antes de executar)."
+        f"{structural.load_factor:.2f}, γc = {structural.gamma_c:.2f}, fck = "
+        f"{structural.fck_mpa:.0f} MPa, fyk = {structural.fyk_mpa:.0f} MPa - método numérico "
+        "do diagrama de interação da seção circular (ver structural_design.py para as "
+        "hipóteses, inclusive a justificativa do γc específico para estacas por NBR "
+        "6122:2022 8.6.3; resultado de pré-dimensionamento, a confirmar de forma "
+        "independente antes de executar)."
     )
     fc = structural.flexo_check
     if fc is not None:

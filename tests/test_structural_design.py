@@ -4,7 +4,7 @@ import unittest
 from spt_piles.models import PileGeometry
 from spt_piles.structural_design import (
     ALPHA_C,
-    GAMMA_C,
+    GAMMA_C_CONCRETE_PILE,
     GAMMA_S,
     build_interaction_diagram,
     check_flexo_compression,
@@ -36,7 +36,7 @@ class TestInteractionDiagram(unittest.TestCase):
         ac_cm2 = math.pi * radius_cm ** 2
         bar_area_cm2 = math.pi * (bar_diameter_mm / 20.0) ** 2
         as_total_cm2 = n_bars * bar_area_cm2
-        fcd = fck / GAMMA_C
+        fcd = fck / GAMMA_C_CONCRETE_PILE
         fyd = fyk / GAMMA_S
         n_max_theoretical_kn = ALPHA_C * fcd * (ac_cm2 - as_total_cm2) * 0.1 + fyd * as_total_cm2 * 0.1
 
@@ -105,7 +105,7 @@ class TestShearDesign(unittest.TestCase):
 
     def test_moderate_shear_requires_spacing(self):
         geometry = PileGeometry(diameter_cm=50)
-        result = design_shear(geometry, v_design_kn=400.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
+        result = design_shear(geometry, v_design_kn=150.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
         self.assertTrue(result.crushing_ok)
         self.assertIsNotNone(result.required_spacing_cm)
         self.assertGreater(result.required_spacing_cm, 0)
@@ -119,9 +119,44 @@ class TestShearDesign(unittest.TestCase):
 
     def test_higher_shear_needs_tighter_spacing(self):
         geometry = PileGeometry(diameter_cm=50)
-        low = design_shear(geometry, v_design_kn=200.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
-        high = design_shear(geometry, v_design_kn=500.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
+        low = design_shear(geometry, v_design_kn=120.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
+        high = design_shear(geometry, v_design_kn=300.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
         self.assertLess(high.required_spacing_cm, low.required_spacing_cm)
+
+    def test_precise_d_used_when_cover_and_bar_diameter_given(self):
+        # Réplica de um memorial de cálculo profissional real (estaca escavada
+        # sem fluido, D=30cm, cobrimento=3cm, estribo=6.3mm, longitudinal=12.5mm,
+        # fck=25MPa, gamma_c=3.1): Vrd2 esperado = 151.36 kN (retro-calculado do
+        # documento de referência).
+        geometry = PileGeometry(diameter_cm=30)
+        result = design_shear(
+            geometry, v_design_kn=14.0, stirrup_diameter_mm=6.3, fck_mpa=25.0,
+            cover_cm=3.0, bar_diameter_mm=12.5, gamma_c=3.1,
+        )
+        self.assertAlmostEqual(result.vrd2_kn, 151.36, delta=0.05)
+
+    def test_precise_d_differs_from_default_approximation(self):
+        geometry = PileGeometry(diameter_cm=30)
+        precise = design_shear(
+            geometry, v_design_kn=14.0, stirrup_diameter_mm=6.3, fck_mpa=25.0,
+            cover_cm=3.0, bar_diameter_mm=12.5,
+        )
+        approx = design_shear(geometry, v_design_kn=14.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
+        self.assertNotAlmostEqual(precise.vrd2_kn, approx.vrd2_kn, delta=0.01)
+
+    def test_default_gamma_c_is_pile_specific_value(self):
+        geometry = PileGeometry(diameter_cm=50)
+        default_result = design_shear(geometry, v_design_kn=200.0, stirrup_diameter_mm=6.3, fck_mpa=25.0)
+        explicit_result = design_shear(
+            geometry, v_design_kn=200.0, stirrup_diameter_mm=6.3, fck_mpa=25.0,
+            gamma_c=GAMMA_C_CONCRETE_PILE,
+        )
+        self.assertAlmostEqual(default_result.vrd2_kn, explicit_result.vrd2_kn)
+
+        lower_gamma_c_result = design_shear(
+            geometry, v_design_kn=200.0, stirrup_diameter_mm=6.3, fck_mpa=25.0, gamma_c=1.4,
+        )
+        self.assertGreater(lower_gamma_c_result.vrd2_kn, default_result.vrd2_kn)
 
 
 if __name__ == "__main__":

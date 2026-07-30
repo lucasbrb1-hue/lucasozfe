@@ -174,22 +174,47 @@ a ser dimensionada de verdade:
   simultaneamente - a mais exigente é reportada como "estaca governante".
 - **Cisalhamento (V)**: se você também informar o cortante característico
   (Hk), os estribos são dimensionados pelo Modelo de Cálculo I da NBR 6118
-  (largura/altura útil equivalentes usuais para seção circular: bw = D,
-  d = 0,8·D), reduzindo o espaçamento construtivo se necessário.
+  (largura equivalente usual para seção circular: bw = D; a altura útil "d"
+  é calculada de forma geométrica exata: d = D - cobrimento - φestribo -
+  φlongitudinal/2), reduzindo o espaçamento construtivo se necessário.
 - **Fator de majoração (γf)**: informe sempre esforços **característicos**
   (Nk, Mk, Hk) - o software aplica γf (padrão 1,4, ajustável) para obter os
   esforços de cálculo (Nd, Md, Vd) usados na verificação estrutural. Se seu
   software estrutural já fornecer valores majorados, ajuste γf para 1,0.
 - **fck e fyk** são configuráveis na aba 5 (padrão 25 MPa e 500 MPa/CA-50).
+- **γc (coeficiente de ponderação do concreto)** é configurável na aba 5
+  (padrão **3,1**, conforme NBR 6122:2022 item 8.6.3 para estacas moldadas
+  in loco - valor mais alto que o padrão estrutural de 1,4 usado em pilares,
+  pois reflete o maior risco de falhas de concretagem em elementos
+  executados sem inspeção visual direta do concreto endurecido). Esse
+  padrão foi conferido por retro-cálculo contra um memorial de cálculo
+  profissional real de uma estaca escavada. Ele pode ser **excessivamente
+  conservador para estacas pré-moldadas** (concreto de fábrica, controle de
+  qualidade equivalente ao de pilares) - ajuste conforme o tipo de estaca e
+  a tabela vigente da norma, com o engenheiro responsável.
 
 > ⚠️ **Este é um cálculo numérico aproximado** (ver `structural_design.py`
 > para o método completo e as simplificações assumidas, como o modelo de
 > cisalhamento e a extrapolação do bloco retangular de tensões na região de
 > compressão quase centrada). Ele foi validado contra limites teóricos
-> conhecidos (ex: capacidade à compressão pura), mas **deve ser conferido de
-> forma independente** (cálculo manual, ábacos ou software estrutural
+> conhecidos (ex: capacidade à compressão pura) e conferido por retro-cálculo
+> contra um memorial de cálculo profissional real, mas **deve ser conferido
+> de forma independente** (cálculo manual, ábacos ou software estrutural
 > dedicado) por um engenheiro responsável antes de qualquer execução -
 > especialmente para estacas fortemente solicitadas à flexão.
+>
+> ⚠️ **Limitação importante: o momento/cortante de cálculo usados aqui são
+> os valores informados (Mk, Hk) apenas majorados por γf** - o software
+> **não** executa uma análise de interação solo-estrutura para estacas
+> curtas sob carregamento lateral (o chamado "Método Russo", baseado em
+> viga sobre base elástica, usado em memoriais profissionais para obter o
+> momento/deslocamento real amplificado pela reação do solo a partir das
+> cargas na cabeça da estaca). Se o Mk/Hk que você informa já vier de uma
+> análise desse tipo (ex: extraído de um memorial ou software que já fez
+> essa verificação), o resultado aqui é consistente; se vier de um cálculo
+> simplificado (só a carga na cabeça da estaca), o momento de cálculo real
+> pode ser **maior** do que o considerado aqui. Confirme com o engenheiro
+> responsável se essa análise é necessária para o seu caso.
 
 ## Rodando os testes
 

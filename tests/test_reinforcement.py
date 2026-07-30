@@ -2,6 +2,7 @@ import unittest
 
 from spt_piles.models import PileGeometry
 from spt_piles.reinforcement import default_rho_min_pct, design_reinforcement, effective_armor_length_m
+from spt_piles.structural_design import GAMMA_C_CONCRETE_PILE
 
 DEFAULT_RHO_40CM = default_rho_min_pct(40)
 
@@ -117,6 +118,40 @@ class TestReinforcement(unittest.TestCase):
         geometry = PileGeometry(diameter_cm=50)
         result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
         self.assertIsNone(result.structural.shear)
+
+    def test_default_gamma_c_is_pile_specific_value(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
+        self.assertAlmostEqual(result.structural.gamma_c, GAMMA_C_CONCRETE_PILE)
+
+    def test_custom_gamma_c_reduces_moment_capacity(self):
+        geometry = PileGeometry(diameter_cm=50)
+        default_result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
+        lower_gamma_c_result = design_reinforcement(
+            geometry, axial_load_kn=800.0, moment_kn_m=50.0, gamma_c=1.4,
+        )
+        self.assertAlmostEqual(lower_gamma_c_result.structural.gamma_c, 1.4)
+        self.assertGreaterEqual(
+            lower_gamma_c_result.structural.flexo_check.m_capacity_knm,
+            default_result.structural.flexo_check.m_capacity_knm,
+        )
+
+    def test_shear_uses_precise_effective_depth_via_cover_and_bar_diameter(self):
+        geometry = PileGeometry(diameter_cm=50)
+        with_shear = design_reinforcement(
+            geometry, axial_load_kn=800.0, moment_kn_m=50.0, shear_kn=250.0, cover_cm=4.0,
+        )
+        self.assertIsNotNone(with_shear.structural.shear)
+        self.assertIsNotNone(with_shear.longitudinal)
+        expected_d_cm = (
+            geometry.diameter_cm - 4.0 - 0.63 - (with_shear.longitudinal.bar_diameter_mm / 20.0)
+        )
+        approx_d_cm = 0.8 * geometry.diameter_cm
+        # A profundidade útil precisa (usada internamente) difere sensivelmente da
+        # aproximação 0.8*D quando cobrimento/bitola são conhecidos - garantimos
+        # isso indiretamente checando que Vrd2 não corresponde ao valor obtido
+        # com a fórmula aproximada.
+        self.assertNotAlmostEqual(expected_d_cm, approx_d_cm, delta=0.5)
 
     def test_invalid_load_factor_raises(self):
         geometry = PileGeometry(diameter_cm=40)

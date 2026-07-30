@@ -22,14 +22,32 @@ MÉTODO E HIPÓTESES (leia antes de usar):
     valores de x. Os resultados costumam ficar próximos aos de softwares
     dedicados no domínio 2-3-4 (flexão predominante) e podem apresentar
     pequenas diferenças na região de compressão quase centrada.
-  - Cisalhamento: Modelo de Cálculo I da NBR 6118, com largura e altura
-    útil equivalentes usuais para seções circulares (bw = D, d = 0,8·D) -
-    uma simplificação amplamente adotada na prática para pilares/estacas
-    circulares, mas que não substitui uma verificação rigorosa.
+  - Cisalhamento: Modelo de Cálculo I da NBR 6118, com largura equivalente
+    usual para seções circulares (bw = D). A altura útil "d" é calculada de
+    forma geométrica exata quando cobrimento e bitola longitudinal são
+    conhecidos (d = D - cobrimento - φestribo - φlongitudinal/2); quando
+    essa informação não está disponível numa chamada específica, cai-se de
+    volta na aproximação usual d = 0,8·D.
   - A contribuição do concreto ao cisalhamento (Vc) é calculada pela
     fórmula de elementos em flexão simples (sem o acréscimo permitido pela
     norma para compressão), o que é uma hipótese A FAVOR DA SEGURANÇA
     (subestima Vc).
+  - γc (coeficiente de ponderação da resistência do concreto): para
+    ESTACAS, a NBR 6122:2022 (item 8.6.3) exige um γc majorado em relação
+    ao valor padrão de estruturas (1,4), para refletir o maior risco de
+    falhas de concretagem/controle de qualidade em elementos moldados sob
+    o terreno, sem inspeção visual direta do concreto endurecido. O valor
+    exato depende do tipo executivo e do controle de concretagem adotado
+    (a norma tabela valores diferentes para estacas pré-moldadas -
+    controle de fábrica, próximo do padrão estrutural - e estacas moldadas
+    in loco com menor controle, podendo chegar a valores bem mais altos).
+    O padrão adotado aqui (GAMMA_C_CONCRETE_PILE = 3,1) foi conferido por
+    retro-cálculo contra um memorial de cálculo profissional real de uma
+    estaca escavada sem fluido, e é um valor conservador adequado para
+    estacas moldadas in loco - mas PODE SER EXCESSIVAMENTE CONSERVADOR
+    para estacas pré-moldadas com controle de fábrica. Ajuste o parâmetro
+    `gamma_c` conforme o tipo de estaca e a tabela da NBR 6122:2022
+    vigente; confirme sempre com o engenheiro responsável.
 
 Este módulo produz uma ESTIMATIVA de pré-dimensionamento. Antes de qualquer
 execução, o resultado deve ser conferido de forma independente (cálculo
@@ -46,7 +64,8 @@ from .models import PileGeometry
 
 ES_MPA = 210_000.0  # módulo de elasticidade do aço (CA-50/CA-60), NBR 6118
 ECU = 3.5e-3  # deformação última de encurtamento do concreto (fck <= 50 MPa)
-GAMMA_C = 1.4
+GAMMA_C_STRUCTURAL = 1.4  # valor padrão NBR 6118 (estruturas em geral)
+GAMMA_C_CONCRETE_PILE = 3.1  # NBR 6122:2022 8.6.3 - estacas moldadas in loco (ver módulo acima)
 GAMMA_S = 1.15
 ALPHA_C = 0.85  # coeficiente do bloco retangular de tensões (NBR 6118 17.2.2)
 KN_PER_CM2_MPA = 0.1  # 1 MPa * 1 cm² = 0.1 kN
@@ -145,9 +164,10 @@ def build_interaction_diagram(
     n_bars: int,
     fck_mpa: float,
     fyk_mpa: float,
+    gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> InteractionDiagram:
     radius_cm = geometry.diameter_cm / 2.0
-    fcd = fck_mpa / GAMMA_C
+    fcd = fck_mpa / gamma_c
     fyd = fyk_mpa / GAMMA_S
 
     bar_circle_radius_cm = radius_cm - cover_cm - (stirrup_diameter_mm / 10.0) - (bar_diameter_mm / 20.0)
@@ -212,9 +232,10 @@ def check_flexo_compression(
     fyk_mpa: float,
     n_design_kn: float,
     m_design_knm: float,
+    gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> FlexoCompressionCheck:
     diagram = build_interaction_diagram(
-        geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars, fck_mpa, fyk_mpa
+        geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars, fck_mpa, fyk_mpa, gamma_c=gamma_c
     )
     m_cap = moment_capacity_at_n(diagram, n_design_kn)
     if m_cap is None:
@@ -248,19 +269,26 @@ def design_shear(
     stirrup_diameter_mm: float,
     fck_mpa: float,
     fywk_mpa: float = 500.0,
+    cover_cm: float | None = None,
+    bar_diameter_mm: float | None = None,
+    gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> ShearDesign:
     diameter_cm = geometry.diameter_cm
     bw_cm = EQUIVALENT_BW_FACTOR * diameter_cm
-    d_cm = EQUIVALENT_D_FACTOR * diameter_cm
+    if cover_cm is not None and bar_diameter_mm is not None:
+        # d = D - cobrimento - φestribo - φlongitudinal/2 (geometria exata da seção circular).
+        d_cm = diameter_cm - cover_cm - (stirrup_diameter_mm / 10.0) - (bar_diameter_mm / 20.0)
+    else:
+        d_cm = EQUIVALENT_D_FACTOR * diameter_cm
 
-    fcd = fck_mpa / GAMMA_C
+    fcd = fck_mpa / gamma_c
     fywd = fywk_mpa / GAMMA_S
     alpha_v2 = 1 - fck_mpa / 250.0
     vrd2_kn = 0.27 * alpha_v2 * fcd * bw_cm * d_cm * KN_PER_CM2_MPA
 
     fctm = 0.3 * (fck_mpa ** (2.0 / 3.0))
     fctk_inf = 0.7 * fctm
-    fctd = fctk_inf / GAMMA_C
+    fctd = fctk_inf / gamma_c
     vc_kn = 0.6 * fctd * bw_cm * d_cm * KN_PER_CM2_MPA
 
     warnings: list[str] = []

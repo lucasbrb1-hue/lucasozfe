@@ -23,7 +23,13 @@ import math
 from dataclasses import dataclass, field
 
 from .models import PileGeometry
-from .structural_design import FlexoCompressionCheck, ShearDesign, check_flexo_compression, design_shear
+from .structural_design import (
+    GAMMA_C_CONCRETE_PILE,
+    FlexoCompressionCheck,
+    ShearDesign,
+    check_flexo_compression,
+    design_shear,
+)
 
 BAR_DIAMETERS_MM = [8.0, 10.0, 12.5, 16.0, 20.0, 25.0, 32.0]
 STIRRUP_DIAMETERS_MM = [5.0, 6.3, 8.0, 10.0]
@@ -70,6 +76,7 @@ class StructuralDesignInfo:
     load_factor: float
     fck_mpa: float
     fyk_mpa: float
+    gamma_c: float
     flexo_check: FlexoCompressionCheck | None
     shear: ShearDesign | None
 
@@ -148,6 +155,7 @@ def _try_design_with_structural_check(
     fyk_mpa: float,
     n_design_kn: float,
     m_design_knm: float,
+    gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> tuple[LongitudinalDesign | None, FlexoCompressionCheck | None]:
     """Como `_try_design`, mas também exige que a combinação de barras resista
     à flexo-compressão (N-M) de cálculo, não só à taxa mínima. Retorna a
@@ -175,7 +183,7 @@ def _try_design_with_structural_check(
 
             check = check_flexo_compression(
                 geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars,
-                fck_mpa, fyk_mpa, n_design_kn, m_design_knm,
+                fck_mpa, fyk_mpa, n_design_kn, m_design_knm, gamma_c=gamma_c,
             )
             last_check = check
             if check.adequate:
@@ -205,6 +213,7 @@ def design_reinforcement(
     load_factor: float = 1.4,
     fck_mpa: float = 25.0,
     fyk_mpa: float = 500.0,
+    gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> ReinforcementResult:
     """`armor_length_m`: comprimento desejado de armadura longitudinal a
     partir do topo da estaca. None (padrão) arma toda a extensão da estaca -
@@ -224,7 +233,11 @@ def design_reinforcement(
     `load_factor` (γf, padrão 1,4) converte os esforços característicos em
     esforços de cálculo (Nd, Md, Vd) para essa verificação estrutural -
     ajuste se seu software já fornecer valores majorados (nesse caso use
-    load_factor=1.0)."""
+    load_factor=1.0). `gamma_c` (γc, padrão 3,1) é o coeficiente de
+    ponderação da resistência do concreto - ver structural_design.py para a
+    justificativa do valor (NBR 6122:2022 8.6.3, específico para estacas,
+    maior que o valor padrão estrutural de 1,4); ajuste conforme o tipo de
+    estaca e o controle de concretagem adotado."""
 
     if geometry.diameter_cm <= 0:
         raise ValueError("Diâmetro da estaca deve ser maior que zero.")
@@ -248,7 +261,7 @@ def design_reinforcement(
         m_design_knm = load_factor * moment_kn_m
         longitudinal, flexo_check = _try_design_with_structural_check(
             geometry, cover_cm, stirrup_diameter_mm, as_min_cm2, fck_mpa, fyk_mpa,
-            n_design_kn, m_design_knm,
+            n_design_kn, m_design_knm, gamma_c=gamma_c,
         )
         if longitudinal is None:
             if flexo_check is None:
@@ -281,7 +294,11 @@ def design_reinforcement(
         shear_result: ShearDesign | None = None
         if shear_kn is not None:
             v_design_kn = load_factor * shear_kn
-            shear_result = design_shear(geometry, v_design_kn, stirrup_diameter_mm, fck_mpa, fyk_mpa)
+            shear_bar_diameter_mm = longitudinal.bar_diameter_mm if longitudinal is not None else None
+            shear_result = design_shear(
+                geometry, v_design_kn, stirrup_diameter_mm, fck_mpa, fyk_mpa,
+                cover_cm=cover_cm, bar_diameter_mm=shear_bar_diameter_mm, gamma_c=gamma_c,
+            )
             warnings.extend(shear_result.warnings)
             if shear_result.required_spacing_cm is not None:
                 if shear_result.required_spacing_cm < adjusted_stirrup_spacing_body_cm:
@@ -299,6 +316,7 @@ def design_reinforcement(
             load_factor=load_factor,
             fck_mpa=fck_mpa,
             fyk_mpa=fyk_mpa,
+            gamma_c=gamma_c,
             flexo_check=flexo_check,
             shear=shear_result,
         )

@@ -27,7 +27,13 @@ from .reinforcement import (
     default_rho_min_pct,
     design_reinforcement,
 )
-from .structural_design import FlexoCompressionCheck, build_interaction_diagram, design_shear, moment_capacity_at_n
+from .structural_design import (
+    GAMMA_C_CONCRETE_PILE,
+    FlexoCompressionCheck,
+    build_interaction_diagram,
+    design_shear,
+    moment_capacity_at_n,
+)
 
 
 @dataclass
@@ -131,6 +137,7 @@ def compute_batch_reinforcement(
     load_factor: float = 1.4,
     fck_mpa: float = 25.0,
     fyk_mpa: float = 500.0,
+    gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> ReinforcementResult:
     """Dimensiona UMA armação comum a todo o lote (mesmo diâmetro para todas
     as estacas do conjunto). Se nenhum esforço do lote tiver momento
@@ -205,7 +212,8 @@ def compute_batch_reinforcement(
                 continue
 
             diagram = build_interaction_diagram(
-                geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars, fck_mpa, fyk_mpa
+                geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars, fck_mpa, fyk_mpa,
+                gamma_c=gamma_c,
             )
             all_ok = True
             worst_utilization = -1.0
@@ -263,7 +271,11 @@ def compute_batch_reinforcement(
     adjusted_stirrup_spacing_body_cm = stirrup_spacing_body_cm
     shear_result = None
     if max_shear_kn is not None:
-        shear_result = design_shear(geometry, max_shear_kn, stirrup_diameter_mm, fck_mpa, fyk_mpa)
+        shear_bar_diameter_mm = longitudinal.bar_diameter_mm if longitudinal is not None else None
+        shear_result = design_shear(
+            geometry, max_shear_kn, stirrup_diameter_mm, fck_mpa, fyk_mpa,
+            cover_cm=cover_cm, bar_diameter_mm=shear_bar_diameter_mm, gamma_c=gamma_c,
+        )
         warnings.extend(shear_result.warnings)
         if shear_result.required_spacing_cm is not None and shear_result.required_spacing_cm < adjusted_stirrup_spacing_body_cm:
             adjusted_stirrup_spacing_body_cm = shear_result.required_spacing_cm
@@ -282,6 +294,7 @@ def compute_batch_reinforcement(
         load_factor=load_factor,
         fck_mpa=fck_mpa,
         fyk_mpa=fyk_mpa,
+        gamma_c=gamma_c,
         flexo_check=worst_check,
         shear=shear_result,
     )
