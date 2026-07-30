@@ -36,12 +36,38 @@ class TestFoundationLoad(unittest.TestCase):
         with self.assertRaises(ValueError):
             FoundationLoad("", characteristic_load_kn=300.0)
 
+    def test_raw_components_default_to_none(self):
+        load = FoundationLoad("P1", characteristic_load_kn=300.0)
+        self.assertIsNone(load.moment_x_knm)
+        self.assertIsNone(load.moment_y_knm)
+        self.assertIsNone(load.shear_x_kn)
+        self.assertIsNone(load.shear_y_kn)
+
+    def test_raw_components_stored_for_traceability(self):
+        load = FoundationLoad(
+            "P1", characteristic_load_kn=700.0, moment_kn_m=150.0, shear_kn=50.0,
+            moment_x_knm=90.0, moment_y_knm=120.0, shear_x_kn=30.0, shear_y_kn=40.0,
+        )
+        self.assertAlmostEqual(load.moment_x_knm, 90.0)
+        self.assertAlmostEqual(load.moment_y_knm, 120.0)
+        self.assertAlmostEqual(load.shear_x_kn, 30.0)
+        self.assertAlmostEqual(load.shear_y_kn, 40.0)
+        # os componentes não substituem o cálculo, que sempre usa a resultante
+        self.assertAlmostEqual(load.moment_kn_m, 150.0)
+        self.assertAlmostEqual(load.shear_kn, 50.0)
+
 
 class TestLoadSet(unittest.TestCase):
     def test_add_without_moment(self):
         loads = LoadSet()
         loads.add("P1", 300.0)
         self.assertFalse(loads.has_moment_data())
+
+    def test_add_with_raw_components(self):
+        loads = LoadSet()
+        loads.add("P1", 700.0, moment_kn_m=150.0, moment_x_knm=90.0, moment_y_knm=120.0)
+        self.assertAlmostEqual(loads.items[0].moment_x_knm, 90.0)
+        self.assertAlmostEqual(loads.items[0].moment_y_knm, 120.0)
 
     def test_has_moment_data_true_if_any_item_has_it(self):
         loads = LoadSet()

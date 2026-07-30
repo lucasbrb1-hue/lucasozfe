@@ -94,6 +94,78 @@ class TestParseLoadsToolOutput(unittest.TestCase):
         self.assertAlmostEqual(result.items[0].moment_kn_m, 45.0)
         self.assertAlmostEqual(result.items[0].shear_kn, 20.0)
 
+    def test_moment_components_combined_into_resultant(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "P1", "characteristic_load_kn": 700.0, "n_piles": 1,
+                    "moment_x_knm": 90.0, "moment_y_knm": 120.0, "original_description": "x",
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        item = result.items[0]
+        self.assertAlmostEqual(item.moment_x_knm, 90.0)
+        self.assertAlmostEqual(item.moment_y_knm, 120.0)
+        self.assertAlmostEqual(item.moment_kn_m, 150.0)  # sqrt(90^2+120^2) = 150
+
+    def test_shear_components_combined_into_resultant(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "P1", "characteristic_load_kn": 700.0, "n_piles": 1,
+                    "shear_x_kn": 30.0, "shear_y_kn": 40.0, "original_description": "x",
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        item = result.items[0]
+        self.assertAlmostEqual(item.shear_x_kn, 30.0)
+        self.assertAlmostEqual(item.shear_y_kn, 40.0)
+        self.assertAlmostEqual(item.shear_kn, 50.0)  # sqrt(30^2+40^2) = 50
+
+    def test_components_take_priority_over_direct_resultant_if_both_given(self):
+        # A IA foi instruída a nunca preencher os dois, mas o parser deve ser
+        # robusto e priorizar os componentes (calculados de forma confiável
+        # em Python) sobre um valor direto porventura também presente.
+        data = {
+            "items": [
+                {
+                    "element_id": "P1", "characteristic_load_kn": 700.0, "n_piles": 1,
+                    "moment_x_knm": 90.0, "moment_y_knm": 120.0, "moment_kn_m": 999.0,
+                    "original_description": "x",
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertAlmostEqual(result.items[0].moment_kn_m, 150.0)
+
+    def test_single_component_only_still_computes_resultant(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "P1", "characteristic_load_kn": 300.0, "n_piles": 1,
+                    "moment_x_knm": 45.0, "original_description": "x",
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertAlmostEqual(result.items[0].moment_kn_m, 45.0)
+        self.assertIsNone(result.items[0].moment_y_knm)
+
+    def test_components_default_to_none_when_absent(self):
+        data = {
+            "items": [
+                {"element_id": "P1", "characteristic_load_kn": 300.0, "n_piles": 1, "original_description": "x"},
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        item = result.items[0]
+        self.assertIsNone(item.moment_x_knm)
+        self.assertIsNone(item.moment_y_knm)
+        self.assertIsNone(item.shear_x_kn)
+        self.assertIsNone(item.shear_y_kn)
+
 
 if __name__ == "__main__":
     unittest.main()

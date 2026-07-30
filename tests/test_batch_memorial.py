@@ -157,6 +157,30 @@ class TestBatchMemorial(unittest.TestCase):
             self.assertIn("Dimensionamento estrutural", text)
             self.assertIn("P2", text)
 
+    def test_imported_loads_table_shows_moment_and_shear(self):
+        from spt_piles.batch_memorial import build_batch_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=50)
+        loads = [
+            FoundationLoad("P1", 300.0),
+            FoundationLoad("P2", 700.0, moment_kn_m=150.0, shear_kn=60.0),
+        ]
+        designs = pg.compute_individual_designs(loads, profile, geometry, "pre_moldada", method=ds.METHOD_DQ)
+        pg.apply_no_uniformization(designs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "batch.docx")
+            build_batch_memorial(
+                out_path, loads, designs, profile, geometry, "pre_moldada", ds.METHOD_DQ,
+                safety_factor=2.0, reinforcement=None, uniformized=False,
+            )
+            text = _all_text(docx.Document(out_path))
+            self.assertIn("Mk (kN·m)", text)
+            self.assertIn("Hk (kN)", text)
+            self.assertIn("150.0", text)
+            self.assertIn("60.0", text)
+
 
 if __name__ == "__main__":
     unittest.main()

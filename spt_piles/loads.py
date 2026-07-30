@@ -29,6 +29,13 @@ class FoundationLoad:
     n_piles: int = 1
     moment_kn_m: float | None = None
     shear_kn: float | None = None
+    # Componentes ortogonais originais (Mx, My, Fx, Fy), quando disponíveis -
+    # guardados apenas para rastreabilidade/conferência; o cálculo usa sempre
+    # moment_kn_m/shear_kn (a resultante já combinada).
+    moment_x_knm: float | None = None
+    moment_y_knm: float | None = None
+    shear_x_kn: float | None = None
+    shear_y_kn: float | None = None
 
     def __post_init__(self) -> None:
         if not self.element_id:
@@ -66,8 +73,17 @@ class LoadSet:
         n_piles: int = 1,
         moment_kn_m: float | None = None,
         shear_kn: float | None = None,
+        moment_x_knm: float | None = None,
+        moment_y_knm: float | None = None,
+        shear_x_kn: float | None = None,
+        shear_y_kn: float | None = None,
     ) -> None:
-        self.items.append(FoundationLoad(element_id, characteristic_load_kn, n_piles, moment_kn_m, shear_kn))
+        self.items.append(
+            FoundationLoad(
+                element_id, characteristic_load_kn, n_piles, moment_kn_m, shear_kn,
+                moment_x_knm, moment_y_knm, shear_x_kn, shear_y_kn,
+            )
+        )
 
     def clear(self) -> None:
         self.items.clear()

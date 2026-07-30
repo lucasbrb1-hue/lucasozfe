@@ -135,8 +135,13 @@ importação por IA mostram uma mensagem pedindo para configurar a chave.
    (lote): o software calcula a resultante automaticamente
    (√(Mx²+My²)/√(Hx²+Hy²)) - prática padrão para seções circulares, já que a
    armadura distribuída uniformemente no perímetro resiste igual em qualquer
-   direção de flexão. Na importação por IA, essa combinação já é feita
-   automaticamente ao ler o PDF.
+   direção de flexão. **Na importação por IA (PDF), essa mesma combinação é
+   feita automaticamente**: a IA é instruída a extrair Mx/My e Fx/Fy
+   exatamente como aparecem no relatório (não a calcular a resultante ela
+   mesma), e o software soma os componentes de forma confiável em Python -
+   os valores brutos extraídos ficam visíveis nas colunas "Mx / My" e
+   "Hx / Hy" da tabela de esforços (aba 6), para você conferir contra o PDF
+   original antes de calcular.
 3. **Use sempre a carga característica (Nk, de serviço)**, nunca a carga
    majorada de cálculo (Nd/ELU) - a capacidade admissível (Qadm) já embute o
    fator de segurança geotécnico, então a comparação correta é sempre contra

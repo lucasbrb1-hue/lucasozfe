@@ -1084,16 +1084,18 @@ class SPTPilesApp(ttk.Frame):
             foreground="#7a4a00", wraplength=750, justify="left",
         ).grid(row=3, column=0, columnspan=6, sticky="w", pady=(2, 0))
 
-        columns = ("id", "load", "npiles", "per_pile", "moment", "shear")
+        columns = ("id", "load", "npiles", "per_pile", "moment", "moment_xy", "shear", "shear_xy")
         self.tree_loads = ttk.Treeview(frame, columns=columns, show="headings", height=8)
         self.tree_loads.heading("id", text="Elemento")
         self.tree_loads.heading("load", text="Carga característica (kN)")
         self.tree_loads.heading("npiles", text="Nº estacas no bloco")
         self.tree_loads.heading("per_pile", text="Carga por estaca (kN)")
         self.tree_loads.heading("moment", text="Mk (kN·m)")
+        self.tree_loads.heading("moment_xy", text="Mx / My (kN·m)")
         self.tree_loads.heading("shear", text="Hk (kN)")
+        self.tree_loads.heading("shear_xy", text="Hx / Hy (kN)")
         for c in columns:
-            self.tree_loads.column(c, width=140, anchor="center")
+            self.tree_loads.column(c, width=115, anchor="center")
         self.tree_loads.pack(fill="both", expand=True, padx=8, pady=4)
 
         buttons = ttk.Frame(frame)
@@ -1150,6 +1152,10 @@ class SPTPilesApp(ttk.Frame):
             element_id = self.entry_load_id.get().strip()
             load_kn = float(self.entry_load_value.get().replace(",", "."))
             n_piles = int(float(self.entry_load_npiles.get().replace(",", ".")))
+            mx_txt = self.entry_load_moment_x.get().strip()
+            moment_x_knm = float(mx_txt.replace(",", ".")) if mx_txt else None
+            my_txt = self.entry_load_moment_y.get().strip()
+            moment_y_knm = float(my_txt.replace(",", ".")) if my_txt else None
             moment_resultant = self._resultant_from_entries(self.entry_load_moment_x, self.entry_load_moment_y)
             if moment_resultant is not None:
                 moment_kn_m = moment_resultant
@@ -1157,6 +1163,10 @@ class SPTPilesApp(ttk.Frame):
                 moment_txt = self.entry_load_moment.get().strip()
                 moment_kn_m = float(moment_txt.replace(",", ".")) if moment_txt else None
 
+            hx_txt = self.entry_load_shear_x.get().strip()
+            shear_x_kn = float(hx_txt.replace(",", ".")) if hx_txt else None
+            hy_txt = self.entry_load_shear_y.get().strip()
+            shear_y_kn = float(hy_txt.replace(",", ".")) if hy_txt else None
             shear_resultant = self._resultant_from_entries(self.entry_load_shear_x, self.entry_load_shear_y)
             if shear_resultant is not None:
                 shear_kn = shear_resultant
@@ -1164,7 +1174,10 @@ class SPTPilesApp(ttk.Frame):
                 shear_txt = self.entry_load_shear.get().strip()
                 shear_kn = float(shear_txt.replace(",", ".")) if shear_txt else None
 
-            self.load_set.add(element_id, load_kn, n_piles, moment_kn_m, shear_kn)
+            self.load_set.add(
+                element_id, load_kn, n_piles, moment_kn_m, shear_kn,
+                moment_x_knm, moment_y_knm, shear_x_kn, shear_y_kn,
+            )
         except ValueError as exc:
             messagebox.showerror("Entrada inválida", str(exc))
             return
@@ -1205,12 +1218,20 @@ class SPTPilesApp(ttk.Frame):
         for item in self.load_set.items:
             moment_txt = f"{item.moment_kn_m:.1f}" if item.moment_kn_m is not None else "-"
             shear_txt = f"{item.shear_kn:.1f}" if item.shear_kn is not None else "-"
+            if item.moment_x_knm is not None or item.moment_y_knm is not None:
+                moment_xy_txt = f"{item.moment_x_knm or 0:.1f} / {item.moment_y_knm or 0:.1f}"
+            else:
+                moment_xy_txt = "-"
+            if item.shear_x_kn is not None or item.shear_y_kn is not None:
+                shear_xy_txt = f"{item.shear_x_kn or 0:.1f} / {item.shear_y_kn or 0:.1f}"
+            else:
+                shear_xy_txt = "-"
             self.tree_loads.insert(
                 "",
                 "end",
                 values=(
                     item.element_id, f"{item.characteristic_load_kn:.1f}", item.n_piles,
-                    f"{item.load_per_pile_kn:.1f}", moment_txt, shear_txt,
+                    f"{item.load_per_pile_kn:.1f}", moment_txt, moment_xy_txt, shear_txt, shear_xy_txt,
                 ),
             )
 
@@ -1236,22 +1257,25 @@ class SPTPilesApp(ttk.Frame):
                 n_piles = int(float(row[2])) if _cell(2) else 1
 
                 mx_txt, my_txt = _cell(5), _cell(6)
-                if mx_txt or my_txt:
-                    mx = float(mx_txt.replace(",", ".")) if mx_txt else 0.0
-                    my = float(my_txt.replace(",", ".")) if my_txt else 0.0
-                    moment_kn_m = math.hypot(mx, my)
+                moment_x_knm = float(mx_txt.replace(",", ".")) if mx_txt else None
+                moment_y_knm = float(my_txt.replace(",", ".")) if my_txt else None
+                if moment_x_knm is not None or moment_y_knm is not None:
+                    moment_kn_m = math.hypot(moment_x_knm or 0.0, moment_y_knm or 0.0)
                 else:
                     moment_kn_m = float(_cell(3).replace(",", ".")) if _cell(3) else None
 
                 hx_txt, hy_txt = _cell(7), _cell(8)
-                if hx_txt or hy_txt:
-                    hx = float(hx_txt.replace(",", ".")) if hx_txt else 0.0
-                    hy = float(hy_txt.replace(",", ".")) if hy_txt else 0.0
-                    shear_kn = math.hypot(hx, hy)
+                shear_x_kn = float(hx_txt.replace(",", ".")) if hx_txt else None
+                shear_y_kn = float(hy_txt.replace(",", ".")) if hy_txt else None
+                if shear_x_kn is not None or shear_y_kn is not None:
+                    shear_kn = math.hypot(shear_x_kn or 0.0, shear_y_kn or 0.0)
                 else:
                     shear_kn = float(_cell(4).replace(",", ".")) if _cell(4) else None
 
-                new_loads.add(element_id, load_kn, n_piles, moment_kn_m, shear_kn)
+                new_loads.add(
+                    element_id, load_kn, n_piles, moment_kn_m, shear_kn,
+                    moment_x_knm, moment_y_knm, shear_x_kn, shear_y_kn,
+                )
             self.load_set = new_loads
             self._refresh_loads_tree()
         except Exception as exc:  # noqa: BLE001
@@ -1266,12 +1290,19 @@ class SPTPilesApp(ttk.Frame):
             return
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["elemento", "carga_caracteristica_kn", "n_estacas", "momento_knm", "cortante_kn"])
+            writer.writerow([
+                "elemento", "carga_caracteristica_kn", "n_estacas", "momento_knm", "cortante_kn",
+                "mx_knm", "my_knm", "hx_kn", "hy_kn",
+            ])
             for item in self.load_set.items:
                 writer.writerow([
                     item.element_id, item.characteristic_load_kn, item.n_piles,
                     item.moment_kn_m if item.moment_kn_m is not None else "",
                     item.shear_kn if item.shear_kn is not None else "",
+                    item.moment_x_knm if item.moment_x_knm is not None else "",
+                    item.moment_y_knm if item.moment_y_knm is not None else "",
+                    item.shear_x_kn if item.shear_x_kn is not None else "",
+                    item.shear_y_kn if item.shear_y_kn is not None else "",
                 ])
 
     def _select_ai_loads_pdf(self) -> None:
@@ -1321,6 +1352,7 @@ class SPTPilesApp(ttk.Frame):
                 self.load_set.add(
                     item.element_id, item.characteristic_load_kn, item.n_piles,
                     item.moment_kn_m, item.shear_kn,
+                    item.moment_x_knm, item.moment_y_knm, item.shear_x_kn, item.shear_y_kn,
                 )
                 added += 1
             except ValueError:

@@ -106,9 +106,16 @@ def build_batch_memorial(
     doc.add_heading(f"{section_n}. Esforços de fundação importados", level=1)
     _add_table(
         doc,
-        ["Elemento", "Carga característica (kN)", "Nº de estacas no bloco", "Carga por estaca (kN)"],
         [
-            [ld.element_id, f"{ld.characteristic_load_kn:.1f}", ld.n_piles, f"{ld.load_per_pile_kn:.1f}"]
+            "Elemento", "Carga característica (kN)", "Nº de estacas no bloco",
+            "Carga por estaca (kN)", "Mk (kN·m)", "Hk (kN)",
+        ],
+        [
+            [
+                ld.element_id, f"{ld.characteristic_load_kn:.1f}", ld.n_piles, f"{ld.load_per_pile_kn:.1f}",
+                (f"{ld.moment_kn_m:.1f}" if ld.moment_kn_m is not None else "-"),
+                (f"{ld.shear_kn:.1f}" if ld.shear_kn is not None else "-"),
+            ]
             for ld in loads
         ],
     )

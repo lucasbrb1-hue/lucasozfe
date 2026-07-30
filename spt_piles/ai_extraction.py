@@ -17,6 +17,7 @@ Opcionalmente, ANTHROPIC_MODEL pode sobrescrever o modelo padrão.
 from __future__ import annotations
 
 import base64
+import math
 import os
 from dataclasses import dataclass, field
 
@@ -277,6 +278,12 @@ class ExtractedLoadItem:
     original_description: str
     moment_kn_m: float | None = None
     shear_kn: float | None = None
+    # Componentes ortogonais originais, quando o relatório os traz separados
+    # (em vez de já dar uma resultante única) - guardados para conferência.
+    moment_x_knm: float | None = None
+    moment_y_knm: float | None = None
+    shear_x_kn: float | None = None
+    shear_y_kn: float | None = None
 
 
 @dataclass
@@ -327,22 +334,47 @@ def _build_loads_tool_schema() -> dict:
                                     "não houver menção a um bloco com múltiplas estacas."
                                 ),
                             },
+                            "moment_x_knm": {
+                                "type": ["number", "null"],
+                                "description": (
+                                    "Componente do momento fletor CARACTERÍSTICO na direção X (Mx) na "
+                                    "cabeça do pilar/bloco/estaca, em kN·m (1 tf·m ≈ 10 kN·m). Preencha "
+                                    "quando o relatório trouxer Mx e My separados. null se não existir."
+                                ),
+                            },
+                            "moment_y_knm": {
+                                "type": ["number", "null"],
+                                "description": "Componente do momento fletor CARACTERÍSTICO na direção Y (My), em kN·m. null se não existir.",
+                            },
                             "moment_kn_m": {
                                 "type": ["number", "null"],
                                 "description": (
-                                    "Momento fletor CARACTERÍSTICO resultante (magnitude; combine Mx e "
-                                    "My como sqrt(Mx²+My²) se ambos existirem) na cabeça do "
-                                    "pilar/bloco/estaca, em kN·m (1 tf·m ≈ 10 kN·m). null se o "
-                                    "relatório não trouxer momento para este elemento."
+                                    "Momento fletor CARACTERÍSTICO já como valor único/resultante (use "
+                                    "isto SOMENTE quando o relatório já trouxer um único valor de momento, "
+                                    "sem componentes Mx/My separados - nesse caso deixe moment_x_knm e "
+                                    "moment_y_knm como null). Em kN·m. null se o relatório não trouxer "
+                                    "momento para este elemento."
                                 ),
+                            },
+                            "shear_x_kn": {
+                                "type": ["number", "null"],
+                                "description": (
+                                    "Componente da força cortante/horizontal CARACTERÍSTICA na direção X "
+                                    "(Fx) na cabeça do pilar/bloco/estaca, em kN. Preencha quando o "
+                                    "relatório trouxer Fx e Fy separados. null se não existir."
+                                ),
+                            },
+                            "shear_y_kn": {
+                                "type": ["number", "null"],
+                                "description": "Componente da força cortante/horizontal CARACTERÍSTICA na direção Y (Fy), em kN. null se não existir.",
                             },
                             "shear_kn": {
                                 "type": ["number", "null"],
                                 "description": (
-                                    "Força cortante/horizontal CARACTERÍSTICA resultante (magnitude; "
-                                    "combine Fx e Fy como sqrt(Fx²+Fy²) se ambos existirem) na cabeça do "
-                                    "pilar/bloco/estaca, em kN. null se o relatório não trouxer força "
-                                    "horizontal para este elemento."
+                                    "Força cortante/horizontal CARACTERÍSTICA já como valor único/"
+                                    "resultante (use isto SOMENTE quando o relatório já trouxer um único "
+                                    "valor, sem componentes Fx/Fy separados - nesse caso deixe shear_x_kn "
+                                    "e shear_y_kn como null). Em kN. null se não existir."
                                 ),
                             },
                             "original_description": {
@@ -383,13 +415,18 @@ _LOADS_SYSTEM_PROMPT = (
     "tf ≈ 10 kN), registrando o valor e unidade originais em "
     "original_description. Quando o relatório indicar que um bloco tem mais de "
     "uma estaca, informe o número de estacas em n_piles; caso contrário, use "
-    "n_piles = 1. Se o relatório também trouxer momento fletor (Mx, My ou momento "
-    "resultante) e/ou força horizontal/cortante (Fx, Fy ou cortante resultante) na "
-    "cabeça do elemento, extraia-os também (sempre característicos, nunca "
-    "majorados; combine componentes ortogonais pela raiz da soma dos quadrados) - "
-    "caso não existam no relatório, deixe moment_kn_m e shear_kn como null, não "
-    "invente. Não invente valores não legíveis - prefira omitir a linha. Responda "
-    "chamando a ferramenta fornecida."
+    "n_piles = 1. Se o relatório também trouxer momento fletor e/ou força "
+    "horizontal/cortante na cabeça do elemento, extraia-os também (sempre "
+    "característicos, nunca majorados). IMPORTANTE: se o relatório traz Mx e My "
+    "(ou Fx e Fy) como componentes SEPARADOS, preencha moment_x_knm/moment_y_knm "
+    "(ou shear_x_kn/shear_y_kn) com os valores exatamente como aparecem - NÃO "
+    "calcule a resultante você mesmo, isso será feito automaticamente depois; "
+    "nesse caso deixe moment_kn_m/shear_kn como null. Se o relatório já traz um "
+    "único valor de momento/cortante (sem componentes separados), preencha "
+    "moment_kn_m/shear_kn diretamente e deixe os campos de componentes como "
+    "null. Quando não houver momento/cortante algum para o elemento, deixe todos "
+    "esses campos como null - não invente. Não invente valores não legíveis - "
+    "prefira omitir a linha. Responda chamando a ferramenta fornecida."
 )
 
 
@@ -420,11 +457,29 @@ def _parse_loads_tool_output(data: dict, pdf_path: str, model_name: str) -> Extr
             if n_piles <= 0:
                 n_piles = 1
 
-            moment_kn_m = item.get("moment_kn_m")
-            moment_kn_m = abs(float(moment_kn_m)) if moment_kn_m is not None else None
+            moment_x_knm = item.get("moment_x_knm")
+            moment_x_knm = float(moment_x_knm) if moment_x_knm is not None else None
+            moment_y_knm = item.get("moment_y_knm")
+            moment_y_knm = float(moment_y_knm) if moment_y_knm is not None else None
 
-            shear_kn = item.get("shear_kn")
-            shear_kn = abs(float(shear_kn)) if shear_kn is not None else None
+            shear_x_kn = item.get("shear_x_kn")
+            shear_x_kn = float(shear_x_kn) if shear_x_kn is not None else None
+            shear_y_kn = item.get("shear_y_kn")
+            shear_y_kn = float(shear_y_kn) if shear_y_kn is not None else None
+
+            if moment_x_knm is not None or moment_y_knm is not None:
+                # a resultante é sempre calculada aqui (em Python), nunca confiada
+                # à aritmética da IA - mais confiável e verificável.
+                moment_kn_m = math.hypot(moment_x_knm or 0.0, moment_y_knm or 0.0)
+            else:
+                moment_direct = item.get("moment_kn_m")
+                moment_kn_m = abs(float(moment_direct)) if moment_direct is not None else None
+
+            if shear_x_kn is not None or shear_y_kn is not None:
+                shear_kn = math.hypot(shear_x_kn or 0.0, shear_y_kn or 0.0)
+            else:
+                shear_direct = item.get("shear_kn")
+                shear_kn = abs(float(shear_direct)) if shear_direct is not None else None
 
             items.append(
                 ExtractedLoadItem(
@@ -434,6 +489,10 @@ def _parse_loads_tool_output(data: dict, pdf_path: str, model_name: str) -> Extr
                     original_description=str(item.get("original_description", "")),
                     moment_kn_m=moment_kn_m,
                     shear_kn=shear_kn,
+                    moment_x_knm=moment_x_knm,
+                    moment_y_knm=moment_y_knm,
+                    shear_x_kn=shear_x_kn,
+                    shear_y_kn=shear_y_kn,
                 )
             )
         except (KeyError, TypeError, ValueError):
