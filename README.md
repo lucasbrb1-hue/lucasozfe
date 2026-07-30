@@ -247,6 +247,10 @@ login no GitHub) e rode - é um binário standalone, não precisa de Python
 instalado no computador que for executá-lo. Essa release é atualizada
 automaticamente a cada novo build; o link acima permanece sempre o mesmo.
 
+Veja o **[TUTORIAL.md](TUTORIAL.md)** para um passo a passo de uso do
+programa (todas as abas, os dois fluxos de cálculo - estaca única e lote -
+e erros comuns).
+
 Se quiser gerar o executável você mesmo (por exemplo, para testar uma
 alteração local antes de commitar), siga a seção abaixo.
 
