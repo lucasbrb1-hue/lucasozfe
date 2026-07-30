@@ -39,9 +39,9 @@ class TestComputeBatchReinforcement(unittest.TestCase):
 
         for load in loads:
             check = check_flexo_compression(
-                geometry, cover_cm=4.0, stirrup_diameter_mm=result.stirrup_diameter_mm,
+                geometry, cover_cm=5.0, stirrup_diameter_mm=result.stirrup_diameter_mm,
                 bar_diameter_mm=result.longitudinal.bar_diameter_mm, n_bars=result.longitudinal.n_bars,
-                fck_mpa=25.0, fyk_mpa=500.0,
+                fck_mpa=30.0, fyk_mpa=500.0,
                 n_design_kn=1.4 * load.load_per_pile_kn, m_design_knm=1.4 * load.moment_per_pile_knm,
             )
             self.assertTrue(check.adequate, f"estaca {load.element_id} deveria ser adequada")

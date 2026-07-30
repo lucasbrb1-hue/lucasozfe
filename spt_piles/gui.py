@@ -600,9 +600,11 @@ class SPTPilesApp(ttk.Frame):
         grid.pack(fill="x", padx=12, pady=12)
 
         r = 0
-        ttk.Label(grid, text="Cobrimento (cm):").grid(row=r, column=0, sticky="w", pady=4)
+        ttk.Label(
+            grid, text="Cobrimento (cm) [mín. NBR 6122:2022: 5cm classe II, 7cm classes III/IV]:"
+        ).grid(row=r, column=0, sticky="w", pady=4)
         self.entry_cover = ttk.Entry(grid, width=10)
-        self.entry_cover.insert(0, "4.0")
+        self.entry_cover.insert(0, "5.0")
         self.entry_cover.grid(row=r, column=1, sticky="w")
         r += 1
 
@@ -694,9 +696,11 @@ class SPTPilesApp(ttk.Frame):
         ).pack(side="left", padx=6)
         r += 1
 
-        ttk.Label(grid, text="fck do concreto (MPa):").grid(row=r, column=0, sticky="w", pady=4)
+        ttk.Label(
+            grid, text="fck do concreto (MPa) [mín. NBR 6122:2022: 30 classe I/II, 40 classes III/IV]:"
+        ).grid(row=r, column=0, sticky="w", pady=4)
         self.entry_fck = ttk.Entry(grid, width=10)
-        self.entry_fck.insert(0, "25")
+        self.entry_fck.insert(0, "30")
         self.entry_fck.grid(row=r, column=1, sticky="w")
         r += 1
 

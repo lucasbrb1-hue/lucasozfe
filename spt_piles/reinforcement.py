@@ -38,6 +38,20 @@ MIN_BARS = 6
 MAX_BARS = 24
 DEFAULT_MAX_AGGREGATE_CM = 1.9  # brita 1, valor usual
 
+# NBR 6122:2022, 8.6.2 - cobrimento mínimo de armadura para estacas moldadas
+# in loco enterradas: 5 cm (classe de agressividade II) a 7 cm (classes III/
+# IV, ambientes mais agressivos). Como alternativa simplificada a um
+# cobrimento maior, a norma permite reduzir 2 mm no diâmetro das barras
+# longitudinais ("espessura de sacrifício") no cálculo - não implementado
+# aqui; se optar por essa alternativa com cobrimento menor, desconte
+# manualmente 2 mm da bitola informada.
+MIN_COVER_CM_CLASS_II = 5.0
+MIN_COVER_CM_CLASS_III_IV = 7.0
+# NBR 6122:2022 - fck mínimo do concreto de estacas: 30 MPa (classes de
+# agressividade I/II) ou 40 MPa (classes III/IV).
+MIN_FCK_MPA_CLASS_I_II = 30.0
+MIN_FCK_MPA_CLASS_III_IV = 40.0
+
 
 def default_rho_min_pct(diameter_cm: float) -> float:
     """Taxa mínima de armadura longitudinal (% da área de concreto), valor
@@ -201,7 +215,7 @@ def _try_design_with_structural_check(
 def design_reinforcement(
     geometry: PileGeometry,
     axial_load_kn: float,
-    cover_cm: float = 4.0,
+    cover_cm: float = MIN_COVER_CM_CLASS_II,
     rho_min_pct: float | None = None,
     stirrup_diameter_mm: float = 6.3,
     stirrup_spacing_body_cm: float = 15.0,
@@ -211,7 +225,7 @@ def design_reinforcement(
     moment_kn_m: float | None = None,
     shear_kn: float | None = None,
     load_factor: float = 1.4,
-    fck_mpa: float = 25.0,
+    fck_mpa: float = MIN_FCK_MPA_CLASS_I_II,
     fyk_mpa: float = 500.0,
     gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> ReinforcementResult:
@@ -237,7 +251,13 @@ def design_reinforcement(
     ponderação da resistência do concreto - ver structural_design.py para a
     justificativa do valor (NBR 6122:2022 8.6.3, específico para estacas,
     maior que o valor padrão estrutural de 1,4); ajuste conforme o tipo de
-    estaca e o controle de concretagem adotado."""
+    estaca e o controle de concretagem adotado.
+
+    `cover_cm` (padrão 5 cm) e `fck_mpa` (padrão 30 MPa) seguem os mínimos da
+    NBR 6122:2022 8.6.2 para estacas moldadas in loco em ambiente de classe
+    de agressividade II (a mais comum para estacas enterradas); ambientes
+    mais agressivos (classes III/IV) exigem cobrimento >= 7 cm e fck >= 40
+    MPa - ajuste conforme a classe do seu projeto (NBR 6118, tabela 7.2)."""
 
     if geometry.diameter_cm <= 0:
         raise ValueError("Diâmetro da estaca deve ser maior que zero.")
@@ -253,6 +273,19 @@ def design_reinforcement(
     as_min_cm2 = (rho / 100.0) * gross_area_cm2
 
     warnings: list[str] = []
+    if cover_cm < MIN_COVER_CM_CLASS_II:
+        warnings.append(
+            f"Cobrimento informado ({cover_cm:.1f} cm) é menor que o mínimo da NBR 6122:2022 "
+            f"8.6.2 para estacas moldadas in loco em classe de agressividade II ({MIN_COVER_CM_CLASS_II:.0f} "
+            "cm). A norma permite, como alternativa simplificada, descontar 2 mm da bitola "
+            "longitudinal no cálculo (espessura de sacrifício) - não aplicado automaticamente "
+            "aqui. Confirme com o engenheiro responsável."
+        )
+    if fck_mpa < MIN_FCK_MPA_CLASS_I_II:
+        warnings.append(
+            f"fck informado ({fck_mpa:.0f} MPa) é menor que o mínimo da NBR 6122:2022 para "
+            f"concreto de estacas em classes de agressividade I/II ({MIN_FCK_MPA_CLASS_I_II:.0f} MPa)."
+        )
     structural: StructuralDesignInfo | None = None
     adjusted_stirrup_spacing_body_cm = stirrup_spacing_body_cm
 

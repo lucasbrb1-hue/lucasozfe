@@ -181,7 +181,17 @@ a ser dimensionada de verdade:
   (Nk, Mk, Hk) - o software aplica γf (padrão 1,4, ajustável) para obter os
   esforços de cálculo (Nd, Md, Vd) usados na verificação estrutural. Se seu
   software estrutural já fornecer valores majorados, ajuste γf para 1,0.
-- **fck e fyk** são configuráveis na aba 5 (padrão 25 MPa e 500 MPa/CA-50).
+- **fck e fyk** são configuráveis na aba 5 (padrão **30 MPa** e 500 MPa/CA-50
+  - o padrão de fck segue o mínimo da NBR 6122:2022 para estacas em classe
+  de agressividade I/II; ambientes mais agressivos (classes III/IV) exigem
+  fck >= 40 MPa, ajustável).
+- **Cobrimento** é configurável na aba 5 (padrão **5 cm**, mínimo da NBR
+  6122:2022 8.6.2 para estacas moldadas in loco em classe de agressividade
+  II; classes III/IV exigem >= 7 cm). Se você usar um cobrimento menor que
+  o mínimo (prática comum com a alternativa simplificada da norma, que
+  permite descontar 2 mm da bitola longitudinal no cálculo como "espessura
+  de sacrifício"), o software emite um aviso - essa alternativa não é
+  aplicada automaticamente, ajuste a bitola manualmente se for o seu caso.
 - **γc (coeficiente de ponderação do concreto)** é configurável na aba 5
   (padrão **3,1**, conforme NBR 6122:2022 item 8.6.3 para estacas moldadas
   in loco - valor mais alto que o padrão estrutural de 1,4 usado em pilares,

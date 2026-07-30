@@ -19,6 +19,8 @@ from .reinforcement import (
     BAR_DIAMETERS_MM,
     MAX_BARS,
     MIN_BARS,
+    MIN_COVER_CM_CLASS_II,
+    MIN_FCK_MPA_CLASS_I_II,
     LongitudinalDesign,
     ReinforcementResult,
     StructuralDesignInfo,
@@ -127,7 +129,7 @@ def apply_group_uniformization(designs: list[PileDesign], n_groups: int) -> list
 def compute_batch_reinforcement(
     loads: list[FoundationLoad],
     geometry: PileGeometry,
-    cover_cm: float = 4.0,
+    cover_cm: float = MIN_COVER_CM_CLASS_II,
     rho_min_pct: float | None = None,
     stirrup_diameter_mm: float = 6.3,
     stirrup_spacing_body_cm: float = 15.0,
@@ -135,7 +137,7 @@ def compute_batch_reinforcement(
     confinement_length_factor: float = 3.0,
     armor_length_m: float | None = None,
     load_factor: float = 1.4,
-    fck_mpa: float = 25.0,
+    fck_mpa: float = MIN_FCK_MPA_CLASS_I_II,
     fyk_mpa: float = 500.0,
     gamma_c: float = GAMMA_C_CONCRETE_PILE,
 ) -> ReinforcementResult:
@@ -253,6 +255,19 @@ def compute_batch_reinforcement(
             break
 
     warnings: list[str] = []
+    if cover_cm < MIN_COVER_CM_CLASS_II:
+        warnings.append(
+            f"Cobrimento informado ({cover_cm:.1f} cm) é menor que o mínimo da NBR 6122:2022 "
+            f"8.6.2 para estacas moldadas in loco em classe de agressividade II ({MIN_COVER_CM_CLASS_II:.0f} "
+            "cm). A norma permite, como alternativa simplificada, descontar 2 mm da bitola "
+            "longitudinal no cálculo (espessura de sacrifício) - não aplicado automaticamente "
+            "aqui. Confirme com o engenheiro responsável."
+        )
+    if fck_mpa < MIN_FCK_MPA_CLASS_I_II:
+        warnings.append(
+            f"fck informado ({fck_mpa:.0f} MPa) é menor que o mínimo da NBR 6122:2022 para "
+            f"concreto de estacas em classes de agressividade I/II ({MIN_FCK_MPA_CLASS_I_II:.0f} MPa)."
+        )
     if longitudinal is None:
         warnings.append(
             "Nenhuma combinação padrão de barras resiste à flexo-compressão de todas as "
