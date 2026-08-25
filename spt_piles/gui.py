@@ -23,7 +23,7 @@ from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
 from .pile_type_advisor import SITE_QUESTIONS, PileTypeRecommendation, SiteConstraints, recommend_pile_types
 from .reinforcement import STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
-from .structural_design import GAMMA_C_CONCRETE_PILE
+from .structural_design import GAMMA_C_STRUCTURAL
 from .soil_data import get_soil, soil_options
 
 METHOD_LABELS = {
@@ -932,11 +932,12 @@ class SPTPilesApp(ttk.Frame):
             row=r, column=0, sticky="w", padx=6, pady=4
         )
         self.entry_gamma_c = ttk.Entry(section_material, width=10)
-        self.entry_gamma_c.insert(0, str(GAMMA_C_CONCRETE_PILE))
+        self.entry_gamma_c.insert(0, str(GAMMA_C_STRUCTURAL))
         self.entry_gamma_c.grid(row=r, column=1, sticky="w")
         ttk.Label(
             section_material,
-            text="padrão conservador p/ moldada in loco; use 1.4 para pré-moldada c/ controle de fábrica",
+            text="padrão = mesmo valor geral da NBR 6118; use ~3.1 só se a execução não tiver "
+            "controle rigoroso de concretagem (ex.: escavada sem qualquer suporte de parede)",
             foreground="#666666",
             wraplength=420,
             justify="left",

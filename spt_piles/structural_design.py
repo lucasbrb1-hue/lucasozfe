@@ -32,22 +32,23 @@ MÉTODO E HIPÓTESES (leia antes de usar):
     fórmula de elementos em flexão simples (sem o acréscimo permitido pela
     norma para compressão), o que é uma hipótese A FAVOR DA SEGURANÇA
     (subestima Vc).
-  - γc (coeficiente de ponderação da resistência do concreto): para
-    ESTACAS, a NBR 6122:2022 (item 8.6.3) exige um γc majorado em relação
-    ao valor padrão de estruturas (1,4), para refletir o maior risco de
-    falhas de concretagem/controle de qualidade em elementos moldados sob
-    o terreno, sem inspeção visual direta do concreto endurecido. O valor
-    exato depende do tipo executivo e do controle de concretagem adotado
-    (a norma tabela valores diferentes para estacas pré-moldadas -
-    controle de fábrica, próximo do padrão estrutural - e estacas moldadas
-    in loco com menor controle, podendo chegar a valores bem mais altos).
-    O padrão adotado aqui (GAMMA_C_CONCRETE_PILE = 3,1) foi conferido por
-    retro-cálculo contra um memorial de cálculo profissional real de uma
-    estaca escavada sem fluido, e é um valor conservador adequado para
-    estacas moldadas in loco - mas PODE SER EXCESSIVAMENTE CONSERVADOR
-    para estacas pré-moldadas com controle de fábrica. Ajuste o parâmetro
-    `gamma_c` conforme o tipo de estaca e a tabela da NBR 6122:2022
-    vigente; confirme sempre com o engenheiro responsável.
+  - γc (coeficiente de ponderação da resistência do concreto): o PADRÃO
+    aqui é γc = 1,4 (GAMMA_C_STRUCTURAL), o mesmo valor geral da NBR 6118 -
+    é o que se aplica à grande maioria das estacas (qualquer execução com
+    controle de concretagem normal: hélice contínua, pré-moldada, estacas
+    escavadas com controle usual etc.). A NBR 6122:2022 (item 8.6.3) prevê
+    um γc majorado apenas para situações executivas específicas de MAIOR
+    risco (por exemplo, concretagem sem controle rigoroso de consumo de
+    cimento/abatimento, ou escavação sem qualquer suporte de parede/fluido
+    estabilizante) - nesses casos, ajuste manualmente o parâmetro `gamma_c`
+    para um valor mais alto (GAMMA_C_CONCRETE_PILE = 3,1 é oferecido aqui
+    como referência para o caso mais crítico, conferido por retro-cálculo
+    contra um memorial de cálculo profissional real de uma estaca escavada
+    sem fluido - mas é EXCESSIVAMENTE CONSERVADOR se aplicado como padrão
+    geral, já que não representa a execução típica da maioria das estacas).
+    Confirme sempre com o engenheiro responsável qual γc se aplica ao seu
+    caso específico, conforme o tipo de estaca e o controle de execução
+    real da obra.
 
 Este módulo produz uma ESTIMATIVA de pré-dimensionamento. Antes de qualquer
 execução, o resultado deve ser conferido de forma independente (cálculo
@@ -164,7 +165,7 @@ def build_interaction_diagram(
     n_bars: int,
     fck_mpa: float,
     fyk_mpa: float,
-    gamma_c: float = GAMMA_C_CONCRETE_PILE,
+    gamma_c: float = GAMMA_C_STRUCTURAL,
 ) -> InteractionDiagram:
     radius_cm = geometry.diameter_cm / 2.0
     fcd = fck_mpa / gamma_c
@@ -232,7 +233,7 @@ def check_flexo_compression(
     fyk_mpa: float,
     n_design_kn: float,
     m_design_knm: float,
-    gamma_c: float = GAMMA_C_CONCRETE_PILE,
+    gamma_c: float = GAMMA_C_STRUCTURAL,
 ) -> FlexoCompressionCheck:
     diagram = build_interaction_diagram(
         geometry, cover_cm, stirrup_diameter_mm, bar_diameter_mm, n_bars, fck_mpa, fyk_mpa, gamma_c=gamma_c
@@ -271,7 +272,7 @@ def design_shear(
     fywk_mpa: float = 500.0,
     cover_cm: float | None = None,
     bar_diameter_mm: float | None = None,
-    gamma_c: float = GAMMA_C_CONCRETE_PILE,
+    gamma_c: float = GAMMA_C_STRUCTURAL,
 ) -> ShearDesign:
     diameter_cm = geometry.diameter_cm
     bw_cm = EQUIVALENT_BW_FACTOR * diameter_cm

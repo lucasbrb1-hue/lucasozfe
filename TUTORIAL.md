@@ -130,9 +130,12 @@ Depois de calcular a profundidade (aba 3), vá à aba 5 para a armação:
   verdade (flexo-compressão N-M); se também informar o cortante (direto ou
   via Hx/Hy), dimensiona os estribos ao cisalhamento.
 - **fck, fyk, γf e γc**: valores padrão já seguem a NBR 6118/6122 (fck 30
-  MPa, γc 3,1) - ajuste conforme o seu projeto específico (classe de
-  agressividade, tipo de estaca, fator de majoração do seu software
-  estrutural).
+  MPa, γc 1,4 - o mesmo valor geral usado na maioria das estacas). Só
+  aumente o γc (ex.: para ~3,1) se a execução da sua estaca não tiver
+  controle rigoroso de concretagem (ex.: escavada sem qualquer suporte de
+  parede/fluido) - usar esse valor majorado sem necessidade mais que dobra
+  a armadura calculada. Ajuste também conforme a classe de agressividade e
+  o fator de majoração do seu software estrutural.
 - Clique em **Calcular armação**. O resultado (bitola, nº de barras,
   estribos, avisos) aparece na caixa de texto abaixo, e passa a ser
   incluído automaticamente no memorial de cálculo (aba 4) se você gerar o

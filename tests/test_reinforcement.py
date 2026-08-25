@@ -2,7 +2,7 @@ import unittest
 
 from spt_piles.models import PileGeometry
 from spt_piles.reinforcement import default_rho_min_pct, design_reinforcement, effective_armor_length_m
-from spt_piles.structural_design import GAMMA_C_CONCRETE_PILE
+from spt_piles.structural_design import GAMMA_C_CONCRETE_PILE, GAMMA_C_STRUCTURAL
 
 DEFAULT_RHO_40CM = default_rho_min_pct(40)
 
@@ -119,20 +119,24 @@ class TestReinforcement(unittest.TestCase):
         result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
         self.assertIsNone(result.structural.shear)
 
-    def test_default_gamma_c_is_pile_specific_value(self):
+    def test_default_gamma_c_is_the_general_structural_value(self):
+        # O padrão é 1,4 (mesmo valor geral da NBR 6118) - vale para a
+        # grande maioria das estacas. O valor majorado da NBR 6122:2022
+        # 8.6.3 (GAMMA_C_CONCRETE_PILE) é uma opção para execuções de maior
+        # risco, não o padrão (ver structural_design.py).
         geometry = PileGeometry(diameter_cm=50)
         result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
-        self.assertAlmostEqual(result.structural.gamma_c, GAMMA_C_CONCRETE_PILE)
+        self.assertAlmostEqual(result.structural.gamma_c, GAMMA_C_STRUCTURAL)
 
-    def test_custom_gamma_c_reduces_moment_capacity(self):
+    def test_higher_gamma_c_reduces_moment_capacity(self):
         geometry = PileGeometry(diameter_cm=50)
         default_result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0)
-        lower_gamma_c_result = design_reinforcement(
-            geometry, axial_load_kn=800.0, moment_kn_m=50.0, gamma_c=1.4,
+        higher_gamma_c_result = design_reinforcement(
+            geometry, axial_load_kn=800.0, moment_kn_m=50.0, gamma_c=GAMMA_C_CONCRETE_PILE,
         )
-        self.assertAlmostEqual(lower_gamma_c_result.structural.gamma_c, 1.4)
-        self.assertGreaterEqual(
-            lower_gamma_c_result.structural.flexo_check.m_capacity_knm,
+        self.assertAlmostEqual(higher_gamma_c_result.structural.gamma_c, GAMMA_C_CONCRETE_PILE)
+        self.assertLessEqual(
+            higher_gamma_c_result.structural.flexo_check.m_capacity_knm,
             default_result.structural.flexo_check.m_capacity_knm,
         )
 

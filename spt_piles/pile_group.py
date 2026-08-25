@@ -30,7 +30,7 @@ from .reinforcement import (
     design_reinforcement,
 )
 from .structural_design import (
-    GAMMA_C_CONCRETE_PILE,
+    GAMMA_C_STRUCTURAL,
     FlexoCompressionCheck,
     build_interaction_diagram,
     design_shear,
@@ -139,7 +139,7 @@ def compute_batch_reinforcement(
     load_factor: float = 1.4,
     fck_mpa: float = MIN_FCK_MPA_CLASS_I_II,
     fyk_mpa: float = 500.0,
-    gamma_c: float = GAMMA_C_CONCRETE_PILE,
+    gamma_c: float = GAMMA_C_STRUCTURAL,
 ) -> ReinforcementResult:
     """Dimensiona UMA armação comum a todo o lote (mesmo diâmetro para todas
     as estacas do conjunto). Se nenhum esforço do lote tiver momento

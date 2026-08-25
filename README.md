@@ -201,15 +201,18 @@ a ser dimensionada de verdade:
   de sacrifício"), o software emite um aviso - essa alternativa não é
   aplicada automaticamente, ajuste a bitola manualmente se for o seu caso.
 - **γc (coeficiente de ponderação do concreto)** é configurável na aba 5
-  (padrão **3,1**, conforme NBR 6122:2022 item 8.6.3 para estacas moldadas
-  in loco - valor mais alto que o padrão estrutural de 1,4 usado em pilares,
-  pois reflete o maior risco de falhas de concretagem em elementos
-  executados sem inspeção visual direta do concreto endurecido). Esse
-  padrão foi conferido por retro-cálculo contra um memorial de cálculo
-  profissional real de uma estaca escavada. Ele pode ser **excessivamente
-  conservador para estacas pré-moldadas** (concreto de fábrica, controle de
-  qualidade equivalente ao de pilares) - ajuste conforme o tipo de estaca e
-  a tabela vigente da norma, com o engenheiro responsável.
+  (padrão **1,4**, o mesmo valor geral da NBR 6118, aplicável à grande
+  maioria das estacas). A NBR 6122:2022 item 8.6.3 prevê um γc majorado
+  apenas para execuções de **maior risco** (ex.: concretagem sem controle
+  rigoroso, ou escavação sem qualquer suporte de parede/fluido
+  estabilizante) - nesses casos específicos, aumente manualmente o γc (um
+  valor de referência de 3,1 para o caso mais crítico - estaca escavada
+  sem fluido - foi conferido por retro-cálculo contra um memorial de
+  cálculo profissional real, e fica disponível como `GAMMA_C_CONCRETE_PILE`
+  em `structural_design.py`). **Não use esse valor majorado como padrão
+  geral** - ele mais que dobra a armadura calculada para o mesmo caso e só
+  se justifica quando a execução realmente carece de controle de
+  concretagem. Confirme sempre com o engenheiro responsável.
 
 > ⚠️ **Este é um cálculo numérico aproximado** (ver `structural_design.py`
 > para o método completo e as simplificações assumidas, como o modelo de

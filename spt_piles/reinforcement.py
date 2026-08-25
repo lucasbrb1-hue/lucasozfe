@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 from .models import PileGeometry
 from .structural_design import (
-    GAMMA_C_CONCRETE_PILE,
+    GAMMA_C_STRUCTURAL,
     FlexoCompressionCheck,
     ShearDesign,
     check_flexo_compression,
@@ -169,7 +169,7 @@ def _try_design_with_structural_check(
     fyk_mpa: float,
     n_design_kn: float,
     m_design_knm: float,
-    gamma_c: float = GAMMA_C_CONCRETE_PILE,
+    gamma_c: float = GAMMA_C_STRUCTURAL,
 ) -> tuple[LongitudinalDesign | None, FlexoCompressionCheck | None]:
     """Como `_try_design`, mas também exige que a combinação de barras resista
     à flexo-compressão (N-M) de cálculo, não só à taxa mínima. Retorna a
@@ -227,7 +227,7 @@ def design_reinforcement(
     load_factor: float = 1.4,
     fck_mpa: float = MIN_FCK_MPA_CLASS_I_II,
     fyk_mpa: float = 500.0,
-    gamma_c: float = GAMMA_C_CONCRETE_PILE,
+    gamma_c: float = GAMMA_C_STRUCTURAL,
 ) -> ReinforcementResult:
     """`armor_length_m`: comprimento desejado de armadura longitudinal a
     partir do topo da estaca. None (padrão) arma toda a extensão da estaca -
@@ -247,11 +247,12 @@ def design_reinforcement(
     `load_factor` (γf, padrão 1,4) converte os esforços característicos em
     esforços de cálculo (Nd, Md, Vd) para essa verificação estrutural -
     ajuste se seu software já fornecer valores majorados (nesse caso use
-    load_factor=1.0). `gamma_c` (γc, padrão 3,1) é o coeficiente de
-    ponderação da resistência do concreto - ver structural_design.py para a
-    justificativa do valor (NBR 6122:2022 8.6.3, específico para estacas,
-    maior que o valor padrão estrutural de 1,4); ajuste conforme o tipo de
-    estaca e o controle de concretagem adotado.
+    load_factor=1.0). `gamma_c` (γc, padrão 1,4 - o mesmo valor geral da NBR
+    6118) é o coeficiente de ponderação da resistência do concreto; a NBR
+    6122:2022 8.6.3 exige um valor mais alto apenas para execuções de maior
+    risco (ex.: escavação sem qualquer suporte de parede/fluido) - ver
+    structural_design.py para a justificativa e ajuste manualmente se o seu
+    caso se enquadrar nessa situação.
 
     `cover_cm` (padrão 5 cm) e `fck_mpa` (padrão 30 MPa) seguem os mínimos da
     NBR 6122:2022 8.6.2 para estacas moldadas in loco em ambiente de classe
