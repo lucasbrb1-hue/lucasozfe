@@ -1,6 +1,6 @@
 import unittest
 
-from spt_piles.loads import FoundationLoad, LoadSet
+from spt_piles.loads import FoundationLoad, LoadCombination, LoadSet
 
 
 class TestFoundationLoad(unittest.TestCase):
@@ -80,6 +80,50 @@ class TestLoadSet(unittest.TestCase):
         self.assertFalse(loads.is_valid())
         loads.add("P1", 300.0)
         self.assertTrue(loads.is_valid())
+
+    def test_has_moment_data_true_for_combinations_even_without_scalar_moment(self):
+        loads = LoadSet()
+        loads.add(
+            "B1", 200.0,
+            combinations=[LoadCombination(label="G1+G2", n_kn=200.0, moment_x_knm=10.0)],
+        )
+        self.assertTrue(loads.has_moment_data())
+
+
+class TestLoadCombination(unittest.TestCase):
+    def test_moment_and_shear_are_resultants_of_components(self):
+        combo = LoadCombination(label="G1+G2", n_kn=100.0, moment_x_knm=3.0, moment_y_knm=4.0, shear_x_kn=6.0, shear_y_kn=8.0)
+        self.assertAlmostEqual(combo.moment_kn_m, 5.0)  # sqrt(3^2+4^2)
+        self.assertAlmostEqual(combo.shear_kn, 10.0)  # sqrt(6^2+8^2)
+
+    def test_defaults_to_zero_components(self):
+        combo = LoadCombination(label="G1", n_kn=50.0)
+        self.assertAlmostEqual(combo.moment_kn_m, 0.0)
+        self.assertAlmostEqual(combo.shear_kn, 0.0)
+
+
+class TestFoundationLoadCombinations(unittest.TestCase):
+    def test_combinations_per_pile_divides_all_fields_by_n_piles(self):
+        load = FoundationLoad(
+            "B1", characteristic_load_kn=400.0, n_piles=2,
+            combinations=[
+                LoadCombination(label="G1+G2", n_kn=400.0, moment_x_knm=20.0, moment_y_knm=10.0, shear_x_kn=8.0, shear_y_kn=4.0),
+            ],
+        )
+        per_pile = load.combinations_per_pile()
+        self.assertEqual(len(per_pile), 1)
+        combo = per_pile[0]
+        self.assertEqual(combo.label, "G1+G2")
+        self.assertAlmostEqual(combo.n_kn, 200.0)
+        self.assertAlmostEqual(combo.moment_x_knm, 10.0)
+        self.assertAlmostEqual(combo.moment_y_knm, 5.0)
+        self.assertAlmostEqual(combo.shear_x_kn, 4.0)
+        self.assertAlmostEqual(combo.shear_y_kn, 2.0)
+
+    def test_combinations_empty_by_default(self):
+        load = FoundationLoad("P1", characteristic_load_kn=300.0)
+        self.assertEqual(load.combinations, [])
+        self.assertEqual(load.combinations_per_pile(), [])
 
 
 if __name__ == "__main__":

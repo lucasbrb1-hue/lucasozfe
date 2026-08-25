@@ -11,7 +11,7 @@ except ImportError:
 
 from spt_piles import depth_solver as ds
 from spt_piles import pile_group as pg
-from spt_piles.loads import FoundationLoad
+from spt_piles.loads import FoundationLoad, LoadCombination
 from spt_piles.models import PileGeometry, SPTProfile
 from spt_piles.reinforcement import design_reinforcement
 from spt_piles.pile_group import compute_batch_reinforcement
@@ -180,6 +180,35 @@ class TestBatchMemorial(unittest.TestCase):
             self.assertIn("Hk (kN)", text)
             self.assertIn("150.0", text)
             self.assertIn("60.0", text)
+
+    def test_batch_memorial_reports_envelope_and_governing_combination(self):
+        from spt_piles.batch_memorial import build_batch_memorial
+
+        profile = build_profile()
+        geometry = PileGeometry(diameter_cm=40)
+        loads = [
+            FoundationLoad(
+                "B1", characteristic_load_kn=300.0, n_piles=1,
+                combinations=[
+                    LoadCombination(label="ALTO_N_BAIXO_M", n_kn=300.0, moment_x_knm=5.0),
+                    LoadCombination(label="BAIXO_N_ALTO_M", n_kn=100.0, moment_x_knm=45.0),
+                ],
+            ),
+        ]
+        designs = pg.compute_individual_designs(loads, profile, geometry, "pre_moldada", method=ds.METHOD_DQ)
+        pg.apply_no_uniformization(designs)
+        reinforcement = compute_batch_reinforcement(loads, geometry)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "batch.docx")
+            build_batch_memorial(
+                out_path, loads, designs, profile, geometry, "pre_moldada", ds.METHOD_DQ,
+                safety_factor=2.0, reinforcement=reinforcement, uniformized=False,
+            )
+            text = _all_text(docx.Document(out_path))
+            self.assertIn("envoltória", text.lower())
+            self.assertIn("2 combinações", text)
+            self.assertIn("BAIXO_N_ALTO_M", text)
 
 
 if __name__ == "__main__":

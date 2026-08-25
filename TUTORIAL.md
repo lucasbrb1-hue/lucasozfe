@@ -158,6 +158,19 @@ estacas de uma vez.
    - **Via IA**: **Importar PDF via IA...** + **Interpretar com IA**, e
      revise a tabela antes de calcular (mesma lógica de revisão obrigatória
      da aba 2).
+   - **Direto do Eberick (.xlsx)**: se você exportou o relatório "Esforços
+     nas Fundações por Elementos" do Eberick em `.xlsx`, use **Importar
+     XLSX de combinações (Eberick)...**. Esse relatório não dá um único
+     Mk/Hk por elemento - dá dezenas de COMBINAÇÕES de carregamento
+     (ex: "G1+G2+0.5Q+0.6V1+0.93D1"), cada uma com seu próprio N, Mx, My,
+     Vx, Vy. O programa importa a envoltória completa e, ao calcular,
+     verifica a armadura contra **todas** as combinações de cada estaca,
+     reportando a mais exigente como governante (aparece nos avisos do
+     resultado, ex: "estaca governante: B26 [G1+G2+0.5Q+V3+0.56D3]"). Como
+     a planilha não informa quantas estacas cada bloco tem, todo elemento é
+     importado com nº de estacas = 1 - remova e adicione manualmente com o
+     valor correto se algum bloco tiver mais de uma estaca. Na tabela, a
+     coluna "Envoltória" mostra quantas combinações cada elemento tem.
 3. Escolha se quer **uniformizar** as profundidades: "Sim" agrupa as
    estacas em N profundidades padrão (reduz a variedade de comprimentos na
    obra, sempre pela maior necessidade de cada grupo - nunca fica menor que

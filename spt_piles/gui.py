@@ -1386,7 +1386,7 @@ class SPTPilesApp(ttk.Frame):
             foreground="#7a4a00", wraplength=750, justify="left",
         ).grid(row=3, column=0, columnspan=6, sticky="w", pady=(2, 0))
 
-        columns = ("id", "load", "npiles", "per_pile", "moment", "moment_xy", "shear", "shear_xy")
+        columns = ("id", "load", "npiles", "per_pile", "moment", "moment_xy", "shear", "shear_xy", "combos")
         self.tree_loads = ttk.Treeview(frame, columns=columns, show="headings", height=8)
         self.tree_loads.heading("id", text="Elemento")
         self.tree_loads.heading("load", text="Carga característica (kN)")
@@ -1396,6 +1396,7 @@ class SPTPilesApp(ttk.Frame):
         self.tree_loads.heading("moment_xy", text="Mx / My (kN·m)")
         self.tree_loads.heading("shear", text="Hk (kN)")
         self.tree_loads.heading("shear_xy", text="Hx / Hy (kN)")
+        self.tree_loads.heading("combos", text="Envoltória")
         for c in columns:
             self.tree_loads.column(c, width=115, anchor="center")
         self.tree_loads.pack(fill="both", expand=True, padx=8, pady=4)
@@ -1409,6 +1410,9 @@ class SPTPilesApp(ttk.Frame):
         ttk.Button(buttons, text="Importar PDF via IA...", command=self._select_ai_loads_pdf).pack(side="left", padx=12)
         self.button_ai_loads_run = ttk.Button(buttons, text="Interpretar com IA", command=self._run_ai_loads_extraction)
         self.button_ai_loads_run.pack(side="left", padx=6)
+        ttk.Button(
+            buttons, text="Importar XLSX de combinações (Eberick)...", command=self._import_eberick_xlsx
+        ).pack(side="left", padx=12)
         self.label_ai_loads_pdf = ttk.Label(frame, text="Nenhum PDF selecionado.")
         self.label_ai_loads_pdf.pack(fill="x", padx=8)
         self.label_ai_loads_status = ttk.Label(frame, text="")
@@ -1518,22 +1522,30 @@ class SPTPilesApp(ttk.Frame):
     def _refresh_loads_tree(self) -> None:
         self.tree_loads.delete(*self.tree_loads.get_children())
         for item in self.load_set.items:
-            moment_txt = f"{item.moment_kn_m:.1f}" if item.moment_kn_m is not None else "-"
-            shear_txt = f"{item.shear_kn:.1f}" if item.shear_kn is not None else "-"
-            if item.moment_x_knm is not None or item.moment_y_knm is not None:
-                moment_xy_txt = f"{item.moment_x_knm or 0:.1f} / {item.moment_y_knm or 0:.1f}"
-            else:
+            if item.combinations:
+                moment_txt = "ver envoltória"
+                shear_txt = "ver envoltória"
                 moment_xy_txt = "-"
-            if item.shear_x_kn is not None or item.shear_y_kn is not None:
-                shear_xy_txt = f"{item.shear_x_kn or 0:.1f} / {item.shear_y_kn or 0:.1f}"
-            else:
                 shear_xy_txt = "-"
+            else:
+                moment_txt = f"{item.moment_kn_m:.1f}" if item.moment_kn_m is not None else "-"
+                shear_txt = f"{item.shear_kn:.1f}" if item.shear_kn is not None else "-"
+                if item.moment_x_knm is not None or item.moment_y_knm is not None:
+                    moment_xy_txt = f"{item.moment_x_knm or 0:.1f} / {item.moment_y_knm or 0:.1f}"
+                else:
+                    moment_xy_txt = "-"
+                if item.shear_x_kn is not None or item.shear_y_kn is not None:
+                    shear_xy_txt = f"{item.shear_x_kn or 0:.1f} / {item.shear_y_kn or 0:.1f}"
+                else:
+                    shear_xy_txt = "-"
+            combos_txt = f"{len(item.combinations)} combinações" if item.combinations else "-"
             self.tree_loads.insert(
                 "",
                 "end",
                 values=(
                     item.element_id, f"{item.characteristic_load_kn:.1f}", item.n_piles,
                     f"{item.load_per_pile_kn:.1f}", moment_txt, moment_xy_txt, shear_txt, shear_xy_txt,
+                    combos_txt,
                 ),
             )
 
@@ -1607,6 +1619,39 @@ class SPTPilesApp(ttk.Frame):
                     item.shear_y_kn if item.shear_y_kn is not None else "",
                 ])
 
+    def _import_eberick_xlsx(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")])
+        if not path:
+            return
+        from .eberick_import import EberickImportError, parse_eberick_combinations_xlsx
+
+        try:
+            imported = parse_eberick_combinations_xlsx(path)
+        except EberickImportError as exc:
+            messagebox.showerror("Erro ao importar planilha", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erro ao importar planilha", f"Erro inesperado: {exc}")
+            return
+
+        if self.load_set.items and not messagebox.askyesno(
+            "Substituir esforços atuais?",
+            "Isso vai substituir a lista de esforços atual pelos elementos importados da "
+            "planilha. Continuar?",
+        ):
+            return
+        self.load_set.clear()
+        for ld in imported:
+            self.load_set.items.append(ld)
+        self._refresh_loads_tree()
+        messagebox.showinfo(
+            "Planilha importada",
+            f"{len(imported)} elemento(s) importados, cada um com sua envoltória completa de "
+            "combinações. O número de estacas por bloco foi definido como 1 (a planilha não "
+            "informa isso) - se algum bloco tiver mais de uma estaca, remova a linha e "
+            "adicione-a manualmente com o número correto, ou ajuste antes de calcular.",
+        )
+
     def _select_ai_loads_pdf(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")])
         if not path:
@@ -1656,6 +1701,7 @@ class SPTPilesApp(ttk.Frame):
                     item.element_id, item.characteristic_load_kn, item.n_piles,
                     item.moment_kn_m, item.shear_kn,
                     item.moment_x_knm, item.moment_y_knm, item.shear_x_kn, item.shear_y_kn,
+                    combinations=item.combinations,
                 )
                 added += 1
             except ValueError:

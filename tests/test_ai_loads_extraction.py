@@ -166,6 +166,59 @@ class TestParseLoadsToolOutput(unittest.TestCase):
         self.assertIsNone(item.shear_x_kn)
         self.assertIsNone(item.shear_y_kn)
 
+    def test_combinations_are_parsed_into_load_combination_objects(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "B1", "characteristic_load_kn": 217.06, "n_piles": 1,
+                    "original_description": "Fundação B1 - envoltória de combinações",
+                    "combinations": [
+                        {"label": "G1+G2", "n_kn": 181.04, "moment_x_knm": 0.54, "moment_y_knm": 2.5},
+                        {
+                            "label": "G1+G2+Q+0.6V2+0.56D2", "n_kn": 217.06, "moment_x_knm": 0.15,
+                            "moment_y_knm": -8.98, "shear_x_kn": -21.27, "shear_y_kn": 10.13,
+                        },
+                    ],
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        item = result.items[0]
+        self.assertEqual(len(item.combinations), 2)
+        self.assertEqual(item.combinations[0].label, "G1+G2")
+        self.assertAlmostEqual(item.combinations[0].n_kn, 181.04)
+        self.assertAlmostEqual(item.combinations[1].moment_y_knm, -8.98)
+        self.assertAlmostEqual(item.combinations[1].shear_x_kn, -21.27)
+        # componentes não preenchidos numa combinação (ex: shear) default para 0
+        self.assertAlmostEqual(item.combinations[0].shear_x_kn, 0.0)
+
+    def test_combinations_default_to_empty_list_when_absent(self):
+        data = {
+            "items": [
+                {"element_id": "P1", "characteristic_load_kn": 300.0, "n_piles": 1, "original_description": "x"},
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertEqual(result.items[0].combinations, [])
+
+    def test_invalid_combination_entries_are_skipped(self):
+        data = {
+            "items": [
+                {
+                    "element_id": "B1", "characteristic_load_kn": 200.0, "n_piles": 1,
+                    "original_description": "x",
+                    "combinations": [
+                        {"label": "G1+G2", "n_kn": 150.0},
+                        {"n_kn": 100.0},  # sem label - deve ser ignorado
+                        {"label": "", "n_kn": 90.0},  # label vazio - ignorado
+                    ],
+                },
+            ]
+        }
+        result = _parse_loads_tool_output(data, "x.pdf", "m")
+        self.assertEqual(len(result.items[0].combinations), 1)
+        self.assertEqual(result.items[0].combinations[0].label, "G1+G2")
+
 
 if __name__ == "__main__":
     unittest.main()

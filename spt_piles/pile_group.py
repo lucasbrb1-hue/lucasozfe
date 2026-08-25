@@ -152,7 +152,7 @@ def compute_batch_reinforcement(
     if not loads:
         raise ValueError("Nenhum esforço de fundação foi informado.")
 
-    if not any(ld.moment_per_pile_knm is not None for ld in loads):
+    if not any(ld.moment_per_pile_knm is not None or ld.combinations for ld in loads):
         max_load = max(ld.load_per_pile_kn for ld in loads)
         return design_reinforcement(
             geometry,
@@ -177,20 +177,32 @@ def compute_batch_reinforcement(
     rho = rho_min_pct if rho_min_pct is not None else default_rho_min_pct(geometry.diameter_cm)
     as_min_cm2 = (rho / 100.0) * gross_area_cm2
 
-    design_pairs = [
-        (
-            load_factor * max(ld.load_per_pile_kn, 0.0),
-            load_factor * (ld.moment_per_pile_knm or 0.0),
-            ld.element_id,
-        )
-        for ld in loads
-    ]
+    design_pairs: list[tuple[float, float, str]] = []
     max_shear_kn: float | None = None
     for ld in loads:
-        v_per_pile = ld.shear_per_pile_kn
-        if v_per_pile is not None:
-            v_d = load_factor * v_per_pile
-            max_shear_kn = v_d if max_shear_kn is None else max(max_shear_kn, v_d)
+        if ld.combinations:
+            # Envoltória de combinações (ex: relatório Eberick de esforços na
+            # fundação) - cada combinação vira um par (Nd, Md) independente;
+            # a busca abaixo já verifica a armadura contra TODOS os pares e
+            # reporta o mais exigente como governante. Combinações com N<0
+            # (tração) são ignoradas aqui - o diagrama N-M-V atual não cobre
+            # esse caso.
+            for combo in ld.combinations_per_pile():
+                if combo.n_kn < 0:
+                    continue
+                design_pairs.append(
+                    (load_factor * combo.n_kn, load_factor * combo.moment_kn_m, f"{ld.element_id} [{combo.label}]")
+                )
+                v_d = load_factor * combo.shear_kn
+                max_shear_kn = v_d if max_shear_kn is None else max(max_shear_kn, v_d)
+        else:
+            design_pairs.append(
+                (load_factor * max(ld.load_per_pile_kn, 0.0), load_factor * (ld.moment_per_pile_knm or 0.0), ld.element_id)
+            )
+            v_per_pile = ld.shear_per_pile_kn
+            if v_per_pile is not None:
+                v_d = load_factor * v_per_pile
+                max_shear_kn = v_d if max_shear_kn is None else max(max_shear_kn, v_d)
 
     radius_cm = geometry.diameter_cm / 2.0
     longitudinal: LongitudinalDesign | None = None

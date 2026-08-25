@@ -15,11 +15,46 @@ Momento e cortante são OPCIONAIS: sem eles, a armadura da estaca é
 dimensionada apenas pela taxa mínima (válido para estacas essencialmente à
 compressão axial). Quando um bloco tem mais de uma estaca, a mesma premissa
 de distribuição igual usada para a carga axial é aplicada a M e H.
+
+ENVOLTÓRIA DE COMBINAÇÕES: softwares como o Eberick não fornecem um único
+Mk/Hk por elemento - fornecem uma tabela com dezenas de COMBINAÇÕES de
+carregamento (ex: "G1+G2+0.5Q+0.6V1+0.93D1"), cada uma com seu próprio N,
+Mx, My, Vx, Vy CONCOMITANTES (do mesmo carregamento). A combinação com maior
+N nem sempre é a mais crítica para a armadura (flexo-compressão), por isso
+`FoundationLoad.combinations`, quando preenchido, guarda a envoltória
+completa - o dimensionamento estrutural (pile_group.compute_batch_reinforcement)
+verifica a armadura contra TODAS as combinações e reporta a mais exigente
+como governante. NUNCA misture valores (N, Mx, My, Vx, Vy) de combinações
+diferentes como se fossem concomitantes - isso gera um esforço fisicamente
+inconsistente.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+
+
+@dataclass
+class LoadCombination:
+    """Uma linha da envoltória de combinações de um elemento: N, Mx, My, Vx,
+    Vy CONCOMITANTES (todos do mesmo carregamento/combinação - nunca misturar
+    com valores de outra combinação)."""
+
+    label: str
+    n_kn: float
+    moment_x_knm: float = 0.0
+    moment_y_knm: float = 0.0
+    shear_x_kn: float = 0.0
+    shear_y_kn: float = 0.0
+
+    @property
+    def moment_kn_m(self) -> float:
+        return math.hypot(self.moment_x_knm, self.moment_y_knm)
+
+    @property
+    def shear_kn(self) -> float:
+        return math.hypot(self.shear_x_kn, self.shear_y_kn)
 
 
 @dataclass
@@ -36,6 +71,10 @@ class FoundationLoad:
     moment_y_knm: float | None = None
     shear_x_kn: float | None = None
     shear_y_kn: float | None = None
+    # Envoltória completa de combinações (opcional) - ver docstring do módulo.
+    # Quando presente, o dimensionamento estrutural usa TODAS as combinações
+    # (não apenas moment_kn_m/shear_kn acima) para achar a governante.
+    combinations: list[LoadCombination] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.element_id:
@@ -61,6 +100,23 @@ class FoundationLoad:
     def shear_per_pile_kn(self) -> float | None:
         return self.shear_kn / self.n_piles if self.shear_kn is not None else None
 
+    def combinations_per_pile(self) -> list[LoadCombination]:
+        """Cada combinação da envoltória, com N/Mx/My/Vx/Vy divididos
+        igualmente entre as estacas do bloco (mesma premissa simplificadora
+        já usada para characteristic_load_kn/moment_kn_m/shear_kn)."""
+
+        return [
+            LoadCombination(
+                label=c.label,
+                n_kn=c.n_kn / self.n_piles,
+                moment_x_knm=c.moment_x_knm / self.n_piles,
+                moment_y_knm=c.moment_y_knm / self.n_piles,
+                shear_x_kn=c.shear_x_kn / self.n_piles,
+                shear_y_kn=c.shear_y_kn / self.n_piles,
+            )
+            for c in self.combinations
+        ]
+
 
 @dataclass
 class LoadSet:
@@ -77,11 +133,13 @@ class LoadSet:
         moment_y_knm: float | None = None,
         shear_x_kn: float | None = None,
         shear_y_kn: float | None = None,
+        combinations: list[LoadCombination] | None = None,
     ) -> None:
         self.items.append(
             FoundationLoad(
                 element_id, characteristic_load_kn, n_piles, moment_kn_m, shear_kn,
                 moment_x_knm, moment_y_knm, shear_x_kn, shear_y_kn,
+                combinations or [],
             )
         )
 
@@ -92,4 +150,4 @@ class LoadSet:
         return len(self.items) > 0
 
     def has_moment_data(self) -> bool:
-        return any(item.moment_kn_m is not None for item in self.items)
+        return any(item.moment_kn_m is not None or item.combinations for item in self.items)

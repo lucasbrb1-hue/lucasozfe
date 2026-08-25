@@ -1,7 +1,7 @@
 import unittest
 
 from spt_piles import pile_group as pg
-from spt_piles.loads import FoundationLoad
+from spt_piles.loads import FoundationLoad, LoadCombination
 from spt_piles.models import PileGeometry
 
 
@@ -73,6 +73,60 @@ class TestComputeBatchReinforcement(unittest.TestCase):
         result = pg.compute_batch_reinforcement(loads, geometry)
         self.assertIsNone(result.longitudinal)
         self.assertTrue(any("Nenhuma combinação" in w for w in result.warnings))
+
+    def test_envelope_checks_all_combinations_not_just_max_n(self):
+        # Réplica do caso real que motivou a envoltória de combinações
+        # (relatório de "Esforços nas Fundações por Elementos" do Eberick):
+        # a combinação de maior N nem sempre é a mais exigente para a
+        # armadura - uma combinação com N bem menor mas M bem maior pode
+        # governar. A busca deve verificar TODAS as combinações e apontar a
+        # mais exigente como governante, não assumir que é a de maior N.
+        geometry = PileGeometry(diameter_cm=40)
+        loads = [
+            FoundationLoad(
+                "B1", characteristic_load_kn=300.0, n_piles=1,
+                combinations=[
+                    LoadCombination(label="ALTO_N_BAIXO_M", n_kn=300.0, moment_x_knm=5.0),
+                    LoadCombination(label="BAIXO_N_ALTO_M", n_kn=100.0, moment_x_knm=45.0),
+                ],
+            ),
+        ]
+        result = pg.compute_batch_reinforcement(loads, geometry)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertTrue(any("BAIXO_N_ALTO_M" in w for w in result.warnings))
+        self.assertFalse(any("ALTO_N_BAIXO_M" in w for w in result.warnings))
+
+    def test_envelope_negative_n_combinations_are_skipped(self):
+        # O diagrama N-M atual não cobre tração (N<0) - combinações de
+        # levantamento devem ser ignoradas na busca, não travar o cálculo.
+        geometry = PileGeometry(diameter_cm=40)
+        loads = [
+            FoundationLoad(
+                "B1", characteristic_load_kn=300.0, n_piles=1,
+                combinations=[
+                    LoadCombination(label="TRACAO", n_kn=-50.0, moment_x_knm=5.0),
+                    LoadCombination(label="COMPRESSAO", n_kn=300.0, moment_x_knm=20.0),
+                ],
+            ),
+        ]
+        result = pg.compute_batch_reinforcement(loads, geometry)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertTrue(any("COMPRESSAO" in w for w in result.warnings))
+
+    def test_envelope_shear_uses_worst_case_across_combinations(self):
+        geometry = PileGeometry(diameter_cm=50)
+        loads = [
+            FoundationLoad(
+                "B1", characteristic_load_kn=800.0, n_piles=1,
+                combinations=[
+                    LoadCombination(label="C1", n_kn=800.0, moment_x_knm=50.0, shear_x_kn=50.0),
+                    LoadCombination(label="C2", n_kn=600.0, moment_x_knm=40.0, shear_x_kn=250.0),
+                ],
+            ),
+        ]
+        result = pg.compute_batch_reinforcement(loads, geometry)
+        self.assertIsNotNone(result.structural.shear)
+        self.assertAlmostEqual(result.structural.v_design_kn, 1.4 * 250.0)
 
 
 if __name__ == "__main__":

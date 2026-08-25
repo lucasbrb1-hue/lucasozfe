@@ -5,6 +5,7 @@
 # As dependências abaixo habilitam funcionalidades opcionais:
 anthropic>=0.40.0     # interpretação de laudos SPT (PDF) via IA (aba "Importar Laudo")
 python-docx>=1.1.0    # geração do memorial de cálculo completo em .docx
+openpyxl>=3.1.0        # importação da planilha de combinações de fundação do Eberick (.xlsx)
 
 # Necessário apenas para GERAR o executável standalone.
 pyinstaller>=6.0

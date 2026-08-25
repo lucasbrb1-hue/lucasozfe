@@ -21,6 +21,7 @@ import math
 import os
 from dataclasses import dataclass, field
 
+from .loads import LoadCombination
 from .soil_data import SOIL_TABLE
 
 DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
@@ -284,6 +285,10 @@ class ExtractedLoadItem:
     moment_y_knm: float | None = None
     shear_x_kn: float | None = None
     shear_y_kn: float | None = None
+    # Envoltória de combinações (quando o relatório traz uma tabela de
+    # combinações em vez de um único Mk/Hk - ver loads.py) - se preenchida,
+    # tem prioridade sobre moment_kn_m/shear_kn no dimensionamento estrutural.
+    combinations: list[LoadCombination] = field(default_factory=list)
 
 
 @dataclass
@@ -323,7 +328,10 @@ def _build_loads_tool_schema() -> dict:
                                 "description": (
                                     "Carga vertical CARACTERÍSTICA (de serviço, Nk - combinação "
                                     "quase-permanente ou ELS; NUNCA a carga majorada/ELU), sempre "
-                                    "convertida para kN (1 tf ≈ 10 kN)."
+                                    "convertida para kN (1 tf ≈ 10 kN). Se este elemento tiver uma "
+                                    "ENVOLTÓRIA de combinações (preenchendo `combinations` abaixo), "
+                                    "use aqui o maior |N| (valor absoluto) entre todas as combinações "
+                                    "extraídas para este elemento."
                                 ),
                             },
                             "n_piles": {
@@ -384,6 +392,47 @@ def _build_loads_tool_schema() -> dict:
                                     "como aparecem no documento), para conferência humana."
                                 ),
                             },
+                            "combinations": {
+                                "type": "array",
+                                "description": (
+                                    "Envoltória COMPLETA de combinações de carregamento para este "
+                                    "elemento, quando o relatório trouxer uma tabela de combinações "
+                                    "(N, Mx, My, Vx, Vy concomitantes por linha - ex: relatório "
+                                    "'Esforços nas Fundações por Elementos' do Eberick) em vez de um "
+                                    "único Mk/Hk. Deixe como lista vazia [] quando o relatório trouxer "
+                                    "apenas um valor por elemento (use moment_kn_m/shear_kn nesse caso)."
+                                ),
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {
+                                            "type": "string",
+                                            "description": "Identificação da combinação exatamente como no relatório (ex: 'G1+G2+0.5Q+0.6V1+0.93D1').",
+                                        },
+                                        "n_kn": {
+                                            "type": "number",
+                                            "description": "Esforço axial N desta combinação, em kN.",
+                                        },
+                                        "moment_x_knm": {
+                                            "type": "number",
+                                            "description": "Momento Mx desta combinação (concomitante com N acima), em kN·m. 0 se não houver.",
+                                        },
+                                        "moment_y_knm": {
+                                            "type": "number",
+                                            "description": "Momento My desta combinação (concomitante com N acima), em kN·m. 0 se não houver.",
+                                        },
+                                        "shear_x_kn": {
+                                            "type": "number",
+                                            "description": "Cortante/horizontal Vx (ou Fx) desta combinação (concomitante com N acima), em kN. 0 se não houver.",
+                                        },
+                                        "shear_y_kn": {
+                                            "type": "number",
+                                            "description": "Cortante/horizontal Vy (ou Fy) desta combinação (concomitante com N acima), em kN. 0 se não houver.",
+                                        },
+                                    },
+                                    "required": ["label", "n_kn"],
+                                },
+                            },
                         },
                         "required": ["element_id", "characteristic_load_kn", "n_piles", "original_description"],
                     },
@@ -436,18 +485,29 @@ _LOADS_SYSTEM_PROMPT = (
     "tiver as duas tabelas, ignore a de pavimento/pilar e use somente a da "
     "fundação/base. Se não tiver certeza de qual tabela é a correta, explique "
     "a ambiguidade no campo notes em vez de adivinhar.\n"
-    "2) Alguns relatórios trazem uma ENVOLTÓRIA (envelope) por elemento, com o "
-    "valor MÁXIMO de N numa linha/coluna e os valores MÁXIMOS de Mx, My, Hx, Hy "
-    "em linhas/colunas SEPARADAS (de combinações diferentes, não concomitantes "
-    "entre si). Nesse caso, NÃO combine o N máximo com o Mx/My máximo de outra "
-    "combinação como se fossem do mesmo instante - isso gera um esforço "
-    "fisicamente inconsistente. Prefira extrair N, Mx, My, Hx, Hy de UMA MESMA "
-    "linha/combinação (a mais desfavorável, isto é, a de maior N, ou a indicada "
-    "pelo relatório como governante/crítica para aquele elemento). Se o "
-    "relatório só oferecer valores em envoltória sem concomitância clara, "
-    "extraia mesmo assim o que for mais razoável mas registre isso "
-    "explicitamente no campo notes, citando os elementos afetados, para que o "
-    "usuário confira manualmente antes de calcular.\n\n"
+    "2) Muitos relatórios (ex: 'Esforços nas Fundações por Elementos' do "
+    "Eberick) trazem, para cada elemento, uma TABELA DE COMBINAÇÕES: dezenas "
+    "de linhas, cada uma com um rótulo (ex: 'G1+G2+0.5Q+0.6V1+0.93D1') e os "
+    "valores de N, Mx, My, Vx (ou Hx/Fx), Vy (ou Hy/Fy) DESSA combinação "
+    "específica - esses valores DE UMA MESMA LINHA são concomitantes entre "
+    "si (podem ser combinados), mas valores de LINHAS DIFERENTES não são "
+    "(nunca misture N de uma linha com Mx/My de outra linha como se fossem "
+    "do mesmo instante - isso gera um esforço fisicamente inconsistente). "
+    "Quando encontrar esse tipo de tabela, NÃO tente escolher apenas uma "
+    "linha \"a mais crítica\" - extraia TODAS as linhas de combinação "
+    "(ignorando as linhas de casos de carregamento individuais isolados, "
+    "como 'Peso próprio (G1)' ou 'Vento X+ (V1)', que não são combinações de "
+    "projeto) para o campo `combinations` desse elemento, com label, n_kn, "
+    "moment_x_knm, moment_y_knm, shear_x_kn, shear_y_kn de cada linha "
+    "exatamente como aparecem (o aplicativo verifica a estrutura contra "
+    "todas as combinações e identifica sozinho qual delas governa - não é "
+    "necessário e não se deve adivinhar isso). Nesse caso, ainda preencha "
+    "characteristic_load_kn com o maior |N| entre as combinações extraídas, "
+    "e deixe moment_kn_m/shear_kn e os campos de componentes únicos (fora de "
+    "`combinations`) como null. Se o relatório trouxer só um valor por "
+    "elemento (sem tabela de combinações), continue usando moment_kn_m/"
+    "shear_kn (ou os componentes únicos) normalmente e deixe `combinations` "
+    "como lista vazia.\n\n"
     "Responda chamando a ferramenta fornecida."
 )
 
@@ -503,6 +563,26 @@ def _parse_loads_tool_output(data: dict, pdf_path: str, model_name: str) -> Extr
                 shear_direct = item.get("shear_kn")
                 shear_kn = abs(float(shear_direct)) if shear_direct is not None else None
 
+            combinations: list[LoadCombination] = []
+            for combo in item.get("combinations") or []:
+                try:
+                    combo_label = str(combo["label"]).strip()
+                    combo_n = float(combo["n_kn"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not combo_label:
+                    continue
+                combinations.append(
+                    LoadCombination(
+                        label=combo_label,
+                        n_kn=combo_n,
+                        moment_x_knm=float(combo.get("moment_x_knm") or 0.0),
+                        moment_y_knm=float(combo.get("moment_y_knm") or 0.0),
+                        shear_x_kn=float(combo.get("shear_x_kn") or 0.0),
+                        shear_y_kn=float(combo.get("shear_y_kn") or 0.0),
+                    )
+                )
+
             items.append(
                 ExtractedLoadItem(
                     element_id=element_id,
@@ -515,6 +595,7 @@ def _parse_loads_tool_output(data: dict, pdf_path: str, model_name: str) -> Extr
                     moment_y_knm=moment_y_knm,
                     shear_x_kn=shear_x_kn,
                     shear_y_kn=shear_y_kn,
+                    combinations=combinations,
                 )
             )
         except (KeyError, TypeError, ValueError):

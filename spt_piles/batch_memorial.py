@@ -104,6 +104,15 @@ def build_batch_memorial(
     section_n += 1
 
     doc.add_heading(f"{section_n}. Esforços de fundação importados", level=1)
+    if any(ld.combinations for ld in loads):
+        doc.add_paragraph(
+            "Elementos marcados com \"envoltória\" abaixo tiveram uma tabela completa de "
+            "combinações de carregamento importada (N, Mx, My, Vx, Vy concomitantes por "
+            "combinação) - a coluna Mk/Hk não mostra um único valor porque a armadura foi "
+            "verificada contra TODAS as combinações da envoltória de cada elemento; a "
+            "combinação mais exigente (governante) de cada estaca está indicada na seção de "
+            "armação adiante."
+        )
     _add_table(
         doc,
         [
@@ -113,8 +122,10 @@ def build_batch_memorial(
         [
             [
                 ld.element_id, f"{ld.characteristic_load_kn:.1f}", ld.n_piles, f"{ld.load_per_pile_kn:.1f}",
-                (f"{ld.moment_kn_m:.1f}" if ld.moment_kn_m is not None else "-"),
-                (f"{ld.shear_kn:.1f}" if ld.shear_kn is not None else "-"),
+                (f"envoltória ({len(ld.combinations)} combinações)" if ld.combinations
+                 else (f"{ld.moment_kn_m:.1f}" if ld.moment_kn_m is not None else "-")),
+                (f"envoltória ({len(ld.combinations)} combinações)" if ld.combinations
+                 else (f"{ld.shear_kn:.1f}" if ld.shear_kn is not None else "-")),
             ]
             for ld in loads
         ],

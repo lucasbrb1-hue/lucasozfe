@@ -31,10 +31,20 @@ estacas a partir de um perfil de sondagem SPT (Standard Penetration Test):
   de cada profundidade analisada.
 - **Importa os esforços (cargas) de fundação** gerados por softwares de
   dimensionamento estrutural (Eberick, TQS, CypeCad etc.) - manualmente,
-  por planilha CSV, ou via IA a partir do PDF do relatório de cargas - e
-  calcula automaticamente a **profundidade e a armadura de cada estaca**,
-  com opção de **uniformizar** (agrupar) as profundidades em um número
-  escolhido de padrões, para simplificar a execução na obra.
+  por planilha CSV, via IA a partir do PDF do relatório de cargas, ou por um
+  leitor dedicado (sem IA) do relatório "Esforços nas Fundações por
+  Elementos" exportado em `.xlsx` pelo Eberick - e calcula automaticamente a
+  **profundidade e a armadura de cada estaca**, com opção de **uniformizar**
+  (agrupar) as profundidades em um número escolhido de padrões, para
+  simplificar a execução na obra.
+- **Suporta envoltória completa de combinações de carregamento**: muitos
+  relatórios (como o do Eberick citado acima) não dão um único Mk/Hk por
+  elemento - dão dezenas de combinações (N, Mx, My, Vx, Vy concomitantes por
+  combinação). Quando isso é importado, a armadura é verificada contra
+  **todas** as combinações de cada estaca, e a mais exigente é reportada
+  como governante - a combinação de maior N nem sempre é a mais crítica
+  para a flexo-compressão, então escolher só uma "na mão" pode subestimar o
+  momento real. Ver `loads.py` (`LoadCombination`) e `eberick_import.py`.
 
 > ⚠️ **Aviso de engenharia**: esta ferramenta é um apoio ao
 > pré-dimensionamento, com coeficientes de referência da literatura técnica.
@@ -60,7 +70,8 @@ spt_piles/
   ai_extraction.py            interpretação de laudos SPT e relatórios de esforços (PDF) via API da Claude
   config.py                    configuração local do usuário (chave de API)
   memorial.py                   geração do memorial de cálculo completo (.docx) de uma estaca
-  loads.py                       esforços de fundação por elemento (pilar/bloco/estaca)
+  loads.py                       esforços de fundação por elemento (pilar/bloco/estaca), inclusive envoltória de combinações
+  eberick_import.py               leitor (sem IA) do relatório de combinações .xlsx do Eberick
   pile_group.py                   cálculo em lote por estaca, uniformização e armação em lote
   batch_memorial.py                memorial de cálculo (.docx) do lote de estacas
   report.py                         geração de relatório resumido em texto
