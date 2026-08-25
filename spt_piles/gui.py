@@ -857,6 +857,9 @@ class SPTPilesApp(ttk.Frame):
         )
         self.entry_moment = ttk.Entry(section_loads, width=10)
         self.entry_moment.grid(row=r, column=1, sticky="w")
+        ttk.Label(section_loads, text="(1 tf·m ≈ 10 kN·m)", foreground="#666666").grid(
+            row=r, column=2, sticky="w", padx=6
+        )
         r += 1
 
         ttk.Label(section_loads, text="  ...ou componentes Mx, My (kN·m):").grid(row=r, column=0, sticky="w", padx=6)
@@ -876,6 +879,9 @@ class SPTPilesApp(ttk.Frame):
         )
         self.entry_shear = ttk.Entry(section_loads, width=10)
         self.entry_shear.grid(row=r, column=1, sticky="w")
+        ttk.Label(section_loads, text="(1 tf ≈ 10 kN)", foreground="#666666").grid(
+            row=r, column=2, sticky="w", padx=6
+        )
         r += 1
 
         ttk.Label(section_loads, text="  ...ou componentes Hx, Hy (kN):").grid(row=r, column=0, sticky="w", padx=6)
@@ -1329,7 +1335,9 @@ class SPTPilesApp(ttk.Frame):
                 "Importe os esforços (cargas) de fundação por pilar/bloco/estaca vindos do "
                 "seu software de dimensionamento estrutural. Use a carga CARACTERÍSTICA (de "
                 "serviço, Nk) - nunca a carga majorada (ELU/Nd). Quando um bloco tiver mais de "
-                "uma estaca, a carga é dividida igualmente entre elas."
+                "uma estaca, a carga é dividida igualmente entre elas. Todos os campos abaixo "
+                "(Nk, Mk/Mx/My, Hk/Hx/Hy) são em kN e kN·m - confira a unidade do relatório do "
+                "seu software antes de digitar (1 tf ≈ 10 kN, 1 tf·m ≈ 10 kN·m)."
             ),
             wraplength=900,
             justify="left",
