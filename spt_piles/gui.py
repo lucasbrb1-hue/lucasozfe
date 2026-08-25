@@ -1645,9 +1645,10 @@ class SPTPilesApp(ttk.Frame):
     def _on_ai_loads_extraction_done(self, result: ExtractedLoadsReport) -> None:
         self.button_ai_loads_run.config(state="normal")
         self.ai_loads_extraction_result = result
-        self.label_ai_loads_status.config(
-            text="", foreground="black",
-        )
+        if result.notes:
+            self.label_ai_loads_status.config(text=f"Observações da IA: {result.notes}", foreground="#7a4a00")
+        else:
+            self.label_ai_loads_status.config(text="", foreground="black")
         added = 0
         for item in result.items:
             try:
@@ -1660,11 +1661,13 @@ class SPTPilesApp(ttk.Frame):
             except ValueError:
                 continue
         self._refresh_loads_tree()
-        messagebox.showinfo(
-            "Esforços importados",
+        message = (
             f"{added} elemento(s) importados pela IA para a lista de esforços. Revise os "
-            "valores na tabela (compare com o PDF original) antes de calcular.",
+            "valores na tabela (compare com o PDF original) antes de calcular."
         )
+        if result.notes:
+            message += f"\n\nObservações da IA sobre a extração:\n{result.notes}"
+        messagebox.showinfo("Esforços importados", message)
 
     def _calculate_batch(self) -> None:
         if not self.load_set.is_valid():
