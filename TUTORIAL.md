@@ -126,11 +126,20 @@ Depois de calcular a profundidade (aba 3), vá à aba 5 para a armação:
   programa só busca a quantidade de barras necessária com essa bitola. Se
   nenhuma quantidade for suficiente, o resultado vem sem armadura e um aviso
   explica o motivo; tente uma bitola maior ou volte para Automática.
-- **Bitola/espaçamento dos estribos** e o **comprimento de armação**: deixe
-  em branco para armar a estaca inteira (mais seguro/conservador), ou
-  informe um valor para armar só os primeiros metros a partir do topo
-  (válido apenas quando a estaca trabalha essencialmente à compressão, sem
-  momento/esforço horizontal relevante na região não armada).
+- **Bitola/espaçamento dos estribos**: sempre informados manualmente.
+- **Comprimento de armação**: deixe em branco para o software CALCULAR
+  automaticamente até que profundidade a armadura longitudinal é realmente
+  necessária - a estimativa compara, a cada profundidade do perfil de SPT,
+  a força axial que ainda resta na estaca (descontado o atrito lateral já
+  mobilizado acima daquele ponto) com a capacidade do concreto simples
+  (sem armadura) da seção; abaixo da profundidade em que o concreto já
+  suporta sozinho a força remanescente, a armadura deixa de ser necessária
+  por resistência (nunca menor que a zona de confinamento). Só se aplica a
+  estacas trabalhando essencialmente à compressão axial (sem momento/
+  esforço horizontal relevante) - o resultado calculado aparece destacado
+  no texto de saída ("CALCULADO AUTOMATICAMENTE"), sempre a confirmar com o
+  engenheiro responsável. Informe um valor manualmente para sobrepor a
+  estimativa (ex.: armar a estaca inteira, mais conservador).
 - **Momento Mk e cortante Hk** (opcionais): se você não informar nada, a
   armadura é só pela taxa mínima. Se informar o momento (direto ou via
   componentes Mx/My), o programa faz o dimensionamento estrutural de

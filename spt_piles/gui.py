@@ -794,13 +794,17 @@ class SPTPilesApp(ttk.Frame):
         r += 1
 
         ttk.Label(
-            section_long, text="Profundidade de armação (m) [vazio = toda a extensão da estaca]:"
+            section_long, text="Profundidade de armação (m) [vazio = calculada automaticamente]:"
         ).grid(row=r, column=0, sticky="w", padx=6, pady=4)
         self.entry_armor_length = ttk.Entry(section_long, width=10)
         self.entry_armor_length.grid(row=r, column=1, sticky="w")
         ttk.Label(
             section_long,
-            text="(só vale para estacas só à compressão axial - confirme com o eng. responsável)",
+            text=(
+                "(deixe em branco para o software estimar pelo atrito lateral do perfil de SPT vs. "
+                "capacidade do concreto simples - só vale sem momento/esforço horizontal; confirme com "
+                "o eng. responsável; informe um valor para sobrepor manualmente)"
+            ),
             foreground="#7a4a00",
             wraplength=420,
             justify="left",
@@ -1169,6 +1173,30 @@ class SPTPilesApp(ttk.Frame):
             return None
         return float(selection)
 
+    def _auto_armor_length_m(
+        self,
+        geometry: PileGeometry,
+        pile_type: str,
+        adopted_depth_m: float,
+        axial_load_kn: float,
+        method: str,
+        load_factor: float,
+        fck_mpa: float,
+        gamma_c: float,
+    ) -> float | None:
+        """Comprimento de armação sugerido automaticamente (ver
+        depth_solver.solve_armor_length) para uma estaca só à compressão
+        axial, nunca menor que a zona de confinamento (3x o diâmetro).
+        Retorna None se a armadura precisar correr por toda a extensão."""
+
+        armor = ds.solve_armor_length(
+            self.profile, geometry, pile_type, adopted_depth_m, axial_load_kn,
+            method=method, load_factor=load_factor, fck_mpa=fck_mpa, gamma_c=gamma_c,
+        )
+        if armor is None:
+            return None
+        return max(armor, 3.0 * geometry.diameter_m)
+
     def _calculate_reinforcement(self) -> None:
         if self.solver_result is None or getattr(self, "_geometry", None) is None:
             messagebox.showinfo("Calcule primeiro", "Calcule a profundidade necessária na aba 2/3 antes de dimensionar a armação.")
@@ -1181,7 +1209,6 @@ class SPTPilesApp(ttk.Frame):
             spacing_body = float(self.entry_stirrup_body.get().replace(",", "."))
             spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
             armor_txt = self.entry_armor_length.get().strip()
-            armor_length = float(armor_txt.replace(",", ".")) if armor_txt else None
             moment_txt = self.entry_moment.get().strip()
             moment_kn_m = float(moment_txt.replace(",", ".")) if moment_txt else None
             shear_txt = self.entry_shear.get().strip()
@@ -1191,6 +1218,17 @@ class SPTPilesApp(ttk.Frame):
             load_factor = float(self.entry_load_factor.get().replace(",", "."))
             gamma_c = float(self.entry_gamma_c.get().replace(",", "."))
             bar_diameter_mm = self._selected_bar_diameter_mm()
+
+            if armor_txt:
+                armor_length = float(armor_txt.replace(",", "."))
+            elif moment_kn_m is None and self.solver_result.required_depth_m is not None:
+                armor_length = self._auto_armor_length_m(
+                    self._geometry, self._pile_type, self.solver_result.required_depth_m,
+                    self.solver_result.load_kn, self._selected_method_key(),
+                    load_factor, fck, gamma_c,
+                )
+            else:
+                armor_length = None
 
             result = design_reinforcement(
                 self._geometry,
@@ -1215,9 +1253,12 @@ class SPTPilesApp(ttk.Frame):
 
         self.reinforcement_result = result
         pile_depth = self.solver_result.required_depth_m if self.solver_result else None
-        self._render_reinforcement(result, pile_depth_m=pile_depth)
+        armor_length_auto = bool(armor_length is not None and not armor_txt)
+        self._render_reinforcement(result, pile_depth_m=pile_depth, armor_length_auto=armor_length_auto)
 
-    def _render_reinforcement(self, result, pile_depth_m: float | None = None) -> None:
+    def _render_reinforcement(
+        self, result, pile_depth_m: float | None = None, armor_length_auto: bool = False
+    ) -> None:
         self.text_reinforcement.delete("1.0", tk.END)
         lines = [
             f"Diâmetro da estaca: {result.diameter_cm:.1f} cm",
@@ -1275,6 +1316,14 @@ class SPTPilesApp(ttk.Frame):
         lines.append("")
         if result.requested_armor_length_m is None:
             lines.append("Comprimento de armadura: toda a extensão da estaca (armadura corrida).")
+        elif armor_length_auto:
+            lines.append(
+                f"Comprimento de armadura CALCULADO AUTOMATICAMENTE: {result.requested_armor_length_m:.2f} m "
+                "a partir do topo (estimativa baseada no atrito lateral acumulado do perfil de SPT vs. "
+                "capacidade do concreto simples - ver depth_solver.solve_armor_length; limitado à "
+                "profundidade real de cada estaca, se ela for menor que esse valor). Informe um valor "
+                "manualmente no campo se quiser sobrepor esta estimativa."
+            )
         else:
             lines.append(
                 f"Comprimento de armadura solicitado: {result.requested_armor_length_m:.2f} m a partir do "
@@ -1790,12 +1839,36 @@ class SPTPilesApp(ttk.Frame):
             spacing_body = float(self.entry_stirrup_body.get().replace(",", "."))
             spacing_top = float(self.entry_stirrup_top.get().replace(",", "."))
             armor_txt = self.entry_armor_length.get().strip()
-            armor_length = float(armor_txt.replace(",", ".")) if armor_txt else None
             fck = float(self.entry_fck.get().replace(",", "."))
             fyk = float(self.entry_fyk.get().replace(",", "."))
             load_factor = float(self.entry_load_factor.get().replace(",", "."))
             gamma_c = float(self.entry_gamma_c.get().replace(",", "."))
             bar_diameter_mm = self._selected_bar_diameter_mm()
+
+            if armor_txt:
+                armor_length = float(armor_txt.replace(",", "."))
+            else:
+                armor_length = None
+                no_moment_batch = not any(
+                    ld.moment_per_pile_knm is not None or ld.combinations for ld in self.load_set.items
+                )
+                if no_moment_batch:
+                    per_pile_armor: list[float] = []
+                    every_pile_ok = True
+                    for d in designs:
+                        if d.adopted_depth_m is None:
+                            continue
+                        a = self._auto_armor_length_m(
+                            geometry, pile_type, d.adopted_depth_m, d.load_per_pile_kn,
+                            method, load_factor, fck, gamma_c,
+                        )
+                        if a is None:
+                            every_pile_ok = False
+                            break
+                        per_pile_armor.append(a)
+                    if every_pile_ok and per_pile_armor:
+                        armor_length = max(per_pile_armor)
+
             self.reinforcement_result = pg.compute_batch_reinforcement(
                 self.load_set.items, geometry, cover_cm=cover, rho_min_pct=rho_min,
                 stirrup_diameter_mm=stirrup_d, stirrup_spacing_body_cm=spacing_body,
@@ -1803,7 +1876,8 @@ class SPTPilesApp(ttk.Frame):
                 load_factor=load_factor, fck_mpa=fck, fyk_mpa=fyk, gamma_c=gamma_c,
                 bar_diameter_mm=bar_diameter_mm,
             )
-            self._render_reinforcement(self.reinforcement_result)
+            batch_armor_auto = bool(armor_length is not None and not armor_txt)
+            self._render_reinforcement(self.reinforcement_result, armor_length_auto=batch_armor_auto)
         except Exception:  # noqa: BLE001 - armação é complementar; falha aqui não impede o resultado em lote
             pass
 

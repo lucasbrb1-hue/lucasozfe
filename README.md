@@ -333,15 +333,25 @@ app `.app`/binário macOS, rode em um Mac. No Windows, use `--add-data
   apenas a taxa mínima (válida só para estacas essencialmente à compressão
   axial). Em nenhum dos dois casos há verificação de torção nem de efeitos
   de grupo entre estacas vizinhas.
-- **Profundidade de armação**: por padrão, a armadura longitudinal é
-  estendida por toda a profundidade da estaca (opção mais segura). É
-  possível pedir uma armadura parcial (informando o comprimento em metros na
-  aba 5 ou 6) - útil quando a estaca trabalha só à compressão axial e não há
-  esforços horizontais/momento relevantes na região não armada; o software
-  nunca deixa a armadura ultrapassar o fundo da estaca (usa sempre o menor
-  valor entre o comprimento pedido e a profundidade real de cada estaca) e
-  emite um aviso lembrando que essa hipótese deve ser confirmada pelo
-  engenheiro responsável antes de adotar.
+- **Profundidade de armação**: para estacas trabalhando essencialmente à
+  compressão axial (sem momento informado), por padrão o software CALCULA
+  automaticamente até que profundidade a armadura longitudinal é necessária
+  (`depth_solver.solve_armor_length`), em vez de exigir que o usuário
+  informe um valor. O critério: a cada profundidade do perfil de SPT, a
+  força axial de cálculo que ainda resta na estaca - descontado o atrito
+  lateral já mobilizado acima daquele ponto, na mesma proporção da
+  resistência última do método SPT usado (Décourt-Quaresma e/ou
+  Aoki-Velloso) - é comparada à capacidade do concreto simples da seção
+  (bloco retangular de tensões da NBR 6118, sem armadura); abaixo da
+  profundidade em que o concreto já suporta sozinho essa força
+  remanescente, a armadura deixa de ser necessária por resistência (nunca
+  menor que a zona de confinamento, 3x o diâmetro). É uma APROXIMAÇÃO de
+  pré-dimensionamento - não é uma análise de transferência de carga
+  solo-estaca (t-z) - e só vale sem momento/esforço horizontal relevante;
+  o software nunca deixa a armadura ultrapassar o fundo da estaca e sempre
+  identifica no resultado quando o valor foi calculado automaticamente,
+  pedindo confirmação do engenheiro responsável. É possível sobrepor a
+  estimativa informando manualmente o comprimento em metros (aba 5 ou 6).
 - Quando ambos os métodos SPT são selecionados, a profundidade necessária
   adota o **mais conservador** (menor capacidade admissível) entre os dois,
   por segurança.
