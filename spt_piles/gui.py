@@ -21,6 +21,7 @@ from .ai_extraction import (
 from .loads import FoundationLoad, LoadSet
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
+from .pile_type_advisor import SITE_QUESTIONS, PileTypeRecommendation, SiteConstraints, recommend_pile_types
 from .reinforcement import STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
 from .structural_design import GAMMA_C_CONCRETE_PILE
 from .soil_data import get_soil, soil_options
@@ -47,6 +48,8 @@ class SPTPilesApp(ttk.Frame):
         self.ai_extraction_result: ExtractedSPTReport | None = None
         self.ai_review_rows: list[ExtractedReading] = []
 
+        self.pile_advisor_result: PileTypeRecommendation | None = None
+
         self.load_set = LoadSet()
         self.pile_designs: list[pg.PileDesign] = []
         self.uniformized: bool = False
@@ -66,6 +69,7 @@ class SPTPilesApp(ttk.Frame):
         self.tab_settings = ttk.Frame(notebook)
         self.tab_profile = ttk.Frame(notebook)
         self.tab_ai = ttk.Frame(notebook)
+        self.tab_pile_advisor = ttk.Frame(notebook)
         self.tab_pile = ttk.Frame(notebook)
         self.tab_results = ttk.Frame(notebook)
         self.tab_reinforcement = ttk.Frame(notebook)
@@ -74,6 +78,7 @@ class SPTPilesApp(ttk.Frame):
         notebook.add(self.tab_settings, text="⚙ Configurações")
         notebook.add(self.tab_profile, text="1. Perfil SPT")
         notebook.add(self.tab_ai, text="2. Importar Laudo (IA)")
+        notebook.add(self.tab_pile_advisor, text="💡 Sugestão de Fundação")
         notebook.add(self.tab_pile, text="3. Estaca e Carga")
         notebook.add(self.tab_results, text="4. Resultados")
         notebook.add(self.tab_reinforcement, text="5. Armação")
@@ -82,6 +87,7 @@ class SPTPilesApp(ttk.Frame):
         self._build_tab_settings()
         self._build_tab_profile()
         self._build_tab_ai()
+        self._build_tab_pile_advisor()
         self._build_tab_pile()
         self._build_tab_results()
         self._build_tab_reinforcement()
@@ -495,6 +501,116 @@ class SPTPilesApp(ttk.Frame):
         messagebox.showinfo(
             "Perfil importado",
             "Perfil de SPT atualizado com os dados revisados da IA. Confira a aba 1 antes de calcular.",
+        )
+
+    # -- Aba: Sugestão de tipo de fundação ----------------------------------
+    def _build_tab_pile_advisor(self) -> None:
+        frame = self.tab_pile_advisor
+
+        info = ttk.Label(
+            frame,
+            text=(
+                "Depois de preencher o perfil de SPT (aba 1 - manualmente, por CSV ou "
+                "via IA), responda as perguntas abaixo sobre o local da obra e clique em "
+                "\"Sugerir tipo de fundação\" para um ranking dos 4 tipos suportados, com a "
+                "justificativa de cada um. É uma triagem heurística de apoio à decisão - "
+                "não substitui a análise do engenheiro de fundações responsável."
+            ),
+            wraplength=900,
+            justify="left",
+        )
+        info.pack(fill="x", padx=8, pady=8)
+
+        questions_frame = ttk.Frame(frame)
+        questions_frame.pack(fill="x", padx=8, pady=4)
+        self.pile_advisor_vars: dict[str, tk.BooleanVar] = {}
+        for attr, question in SITE_QUESTIONS:
+            var = tk.BooleanVar(value=False)
+            self.pile_advisor_vars[attr] = var
+            ttk.Checkbutton(questions_frame, text=question, variable=var, wraplength=850).pack(
+                anchor="w", pady=2
+            )
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", padx=8, pady=8)
+        ttk.Button(buttons, text="Sugerir tipo de fundação", command=self._run_pile_advisor).pack(side="left")
+        ttk.Button(
+            buttons,
+            text="Aplicar tipo sugerido na aba '3. Estaca e Carga'",
+            command=self._apply_recommended_pile_type,
+        ).pack(side="left", padx=12)
+
+        self.text_pile_advisor = tk.Text(frame, height=18, wrap="word")
+        self.text_pile_advisor.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def _run_pile_advisor(self) -> None:
+        if not self.profile.is_valid():
+            messagebox.showinfo(
+                "Perfil incompleto",
+                "Preencha o perfil de SPT (aba 1) com ao menos 2 leituras antes de pedir a "
+                "sugestão de tipo de fundação.",
+            )
+            return
+        try:
+            water_txt = self.entry_water_table.get().strip()
+            water_table_depth_m = float(water_txt.replace(",", ".")) if water_txt else None
+        except ValueError as exc:
+            messagebox.showerror("Entrada inválida", str(exc))
+            return
+        water_table_found = water_table_depth_m is not None
+
+        constraints = SiteConstraints(**{attr: var.get() for attr, var in self.pile_advisor_vars.items()})
+        try:
+            recommendation = recommend_pile_types(
+                self.profile,
+                water_table_found=water_table_found,
+                water_table_depth_m=water_table_depth_m,
+                constraints=constraints,
+            )
+        except ValueError as exc:
+            messagebox.showerror("Erro", str(exc))
+            return
+        self.pile_advisor_result = recommendation
+        self._render_pile_advisor(recommendation)
+
+    def _render_pile_advisor(self, recommendation: PileTypeRecommendation) -> None:
+        self.text_pile_advisor.delete("1.0", tk.END)
+        lines: list[str] = []
+        if recommendation.profile_notes:
+            lines.append("Observações do perfil de solo:")
+            for note in recommendation.profile_notes:
+                lines.append(f"  - {note}")
+            lines.append("")
+
+        lines.append("Ranking de adequação (do mais ao menos indicado):")
+        lines.append("")
+        for i, assessment in enumerate(recommendation.assessments, start=1):
+            lines.append(f"{i}. {assessment.label}  (pontuação relativa: {assessment.score:+d})")
+            for reason in assessment.reasons:
+                lines.append(f"   + {reason}")
+            for concern in assessment.concerns:
+                lines.append(f"   - {concern}")
+            lines.append("")
+
+        lines.append(
+            "Aviso: esta é uma triagem heurística de apoio à decisão, não um método "
+            "normativo - a escolha final deve considerar também custo, disponibilidade "
+            "local de equipamento/mão de obra, licenciamento ambiental e a experiência "
+            "do engenheiro de fundações responsável."
+        )
+        self.text_pile_advisor.insert("1.0", "\n".join(lines))
+
+    def _apply_recommended_pile_type(self) -> None:
+        if self.pile_advisor_result is None or self.pile_advisor_result.best is None:
+            messagebox.showinfo(
+                "Nada para aplicar", "Clique em \"Sugerir tipo de fundação\" primeiro."
+            )
+            return
+        best = self.pile_advisor_result.best
+        self.combo_pile_type.set(PILE_TYPES[best.pile_type])
+        messagebox.showinfo(
+            "Tipo aplicado",
+            f"Tipo de estaca da aba '3. Estaca e Carga' definido para: {best.label}",
         )
 
     # -- Tab 3: Estaca e carga ---------------------------------------------

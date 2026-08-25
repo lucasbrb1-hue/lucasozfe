@@ -19,6 +19,13 @@ estacas a partir de um perfil de sondagem SPT (Standard Penetration Test):
   Anthropic): extrai profundidade, N-SPT, tipo de solo e nível d'água
   automaticamente, sempre com revisão humana obrigatória antes de qualquer
   cálculo.
+- **Sugere o tipo de estaca mais adequado** a partir do perfil de SPT (aba
+  "💡 Sugestão de Fundação"): cruza a resistência do solo e o nível d'água
+  com perguntas sobre restrições do local da obra (vizinhança sensível a
+  vibração, acesso/espaço para equipamento, pé-direito, uso de fluido
+  estabilizante, porte da obra) e mostra um ranking justificado dos 4 tipos
+  suportados - ver `pile_type_advisor.py` para o método (uma triagem
+  heurística de apoio à decisão, não um método normativo).
 - Gera um **memorial de cálculo completo em .docx**, com metodologia,
   fórmulas e memória de cálculo (valores intermediários) de cada método e
   de cada profundidade analisada.
@@ -47,6 +54,7 @@ spt_piles/
   decourt_quaresma.py    método de Décourt-Quaresma
   aoki_velloso.py         método de Aoki-Velloso
   depth_solver.py         busca da profundidade mínima que atende a carga
+  pile_type_advisor.py     sugestão heurística do tipo de estaca (solo + restrições do local)
   reinforcement.py         dimensionamento da armação
   structural_design.py       flexo-compressão (N-M) e cisalhamento (V) da seção circular
   ai_extraction.py            interpretação de laudos SPT e relatórios de esforços (PDF) via API da Claude

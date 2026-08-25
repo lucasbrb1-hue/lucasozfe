@@ -17,9 +17,10 @@ cálculo, veja o [README.md](README.md).
    - O Windows SmartScreen pode avisar "O Windows protegeu o computador"
      (comum em executáveis não assinados digitalmente). Clique em **Mais
      informações** e depois em **Executar assim mesmo**.
-4. A janela do programa abre com 7 abas: **Configurações**, **1. Perfil
-   SPT**, **2. Importar Laudo (IA)**, **3. Estaca e Carga**, **4.
-   Resultados**, **5. Armação** e **6. Esforços e Uniformização**.
+4. A janela do programa abre com 8 abas: **Configurações**, **1. Perfil
+   SPT**, **2. Importar Laudo (IA)**, **💡 Sugestão de Fundação**, **3.
+   Estaca e Carga**, **4. Resultados**, **5. Armação** e **6. Esforços e
+   Uniformização**.
 
 Existem dois fluxos de uso, que podem ser combinados:
 
@@ -64,7 +65,31 @@ golpes) e o tipo de solo. Clique em **Adicionar** para cada linha.
 - Se houver nível d'água, informe a profundidade no campo no fim da aba 1
   (ou deixe em branco se seco/não identificado).
 
-### 3.2. Informar a estaca e a carga (aba 3)
+### 3.2. (Opcional) Pedir uma sugestão de tipo de fundação (aba 💡)
+
+Com o perfil de SPT preenchido (não importa se manualmente, por CSV ou via
+IA), a aba **💡 Sugestão de Fundação** pode ajudar a escolher o tipo de
+estaca antes de você preencher a aba 3:
+
+1. Responda as perguntas de sim/não sobre o local da obra (vizinhança
+   sensível a vibração, restrição de ruído, acesso/espaço para equipamento
+   de grande porte, pé-direito restrito, se quer evitar fluido
+   estabilizante, se é uma obra pequena/orçamento restrito). Deixe
+   desmarcado o que não se aplica.
+2. Clique em **Sugerir tipo de fundação**. O programa cruza a resistência
+   do solo (N-SPT) e o nível d'água do perfil com suas respostas e mostra
+   um ranking dos 4 tipos suportados, cada um com os pontos a favor e as
+   restrições identificadas.
+3. Se concordar com o tipo mais bem colocado, clique em **Aplicar tipo
+   sugerido na aba '3. Estaca e Carga'** para já preenchê-lo lá.
+
+> Esta sugestão é uma triagem heurística de apoio à decisão (regras de
+> prática usual de fundações), não um cálculo normativo - ela não considera
+> custo, disponibilidade local de equipamento/mão de obra nem licenciamento
+> ambiental. A escolha final é sempre do engenheiro de fundações
+> responsável.
+
+### 3.3. Informar a estaca e a carga (aba 3)
 
 - **Tipo de estaca**: hélice contínua, escavada (broca), pré-moldada
   cravada ou Strauss - os coeficientes de cálculo mudam por tipo.
@@ -75,7 +100,7 @@ golpes) e o tipo de solo. Clique em **Adicionar** para cada linha.
   conservador dos dois quando ambos estão marcados).
 - Clique em **Calcular profundidade necessária**.
 
-### 3.3. Conferir o resultado (aba 4)
+### 3.4. Conferir o resultado (aba 4)
 
 A aba mostra a profundidade mínima encontrada, uma tabela de capacidade de
 carga por profundidade e um gráfico. Dois botões de exportação:
@@ -86,7 +111,7 @@ carga por profundidade e um gráfico. Dois botões de exportação:
   metodologia, fórmulas e a memória de cálculo de cada profundidade
   analisada - normalmente é o que se anexa ao projeto.
 
-### 3.4. Dimensionar a armação (aba 5)
+### 3.5. Dimensionar a armação (aba 5)
 
 Depois de calcular a profundidade (aba 3), vá à aba 5 para a armação:
 
