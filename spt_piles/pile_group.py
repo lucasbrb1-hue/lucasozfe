@@ -140,6 +140,7 @@ def compute_batch_reinforcement(
     fck_mpa: float = MIN_FCK_MPA_CLASS_I_II,
     fyk_mpa: float = 500.0,
     gamma_c: float = GAMMA_C_STRUCTURAL,
+    bar_diameter_mm: float | None = None,
 ) -> ReinforcementResult:
     """Dimensiona UMA armação comum a todo o lote (mesmo diâmetro para todas
     as estacas do conjunto). Se nenhum esforço do lote tiver momento
@@ -147,7 +148,11 @@ def compute_batch_reinforcement(
     (armadura mínima). Se houver momento em pelo menos um elemento, busca a
     menor combinação de barras que resista à flexo-compressão de TODAS as
     estacas do lote simultaneamente (cada uma com seu próprio Nd, Md) - a
-    estaca mais exigente (menor margem) é reportada como "governante"."""
+    estaca mais exigente (menor margem) é reportada como "governante".
+
+    `bar_diameter_mm`: None (padrão) busca automaticamente a menor bitola
+    comercial que atenda; informe um valor para fixar a bitola das barras
+    longitudinais (só a quantidade de barras é buscada)."""
 
     if not loads:
         raise ValueError("Nenhum esforço de fundação foi informado.")
@@ -164,6 +169,7 @@ def compute_batch_reinforcement(
             stirrup_spacing_top_cm=stirrup_spacing_top_cm,
             confinement_length_factor=confinement_length_factor,
             armor_length_m=armor_length_m,
+            bar_diameter_mm=bar_diameter_mm,
         )
 
     if geometry.diameter_cm <= 0:
@@ -172,6 +178,8 @@ def compute_batch_reinforcement(
         raise ValueError("Cobrimento deve ser maior que zero.")
     if load_factor <= 0:
         raise ValueError("Fator de majoração (γf) deve ser maior que zero.")
+    if bar_diameter_mm is not None and bar_diameter_mm <= 0:
+        raise ValueError("Bitola das barras longitudinais deve ser maior que zero.")
 
     gross_area_cm2 = geometry.area_m2 * 1e4
     rho = rho_min_pct if rho_min_pct is not None else default_rho_min_pct(geometry.diameter_cm)
@@ -209,7 +217,9 @@ def compute_batch_reinforcement(
     worst_check: FlexoCompressionCheck | None = None
     governing_id: str | None = None
 
-    for bar_diameter_mm in BAR_DIAMETERS_MM:
+    fixed_bar_diameter_mm = bar_diameter_mm
+    candidate_diameters = [bar_diameter_mm] if bar_diameter_mm is not None else BAR_DIAMETERS_MM
+    for bar_diameter_mm in candidate_diameters:
         bar_cm = bar_diameter_mm / 10.0
         bar_center_radius = radius_cm - cover_cm - (stirrup_diameter_mm / 10.0) - bar_cm / 2.0
         if bar_center_radius <= 0:
@@ -281,10 +291,21 @@ def compute_batch_reinforcement(
             f"concreto de estacas em classes de agressividade I/II ({MIN_FCK_MPA_CLASS_I_II:.0f} MPa)."
         )
     if longitudinal is None:
+        bitola_txt = (
+            f" com a bitola fixada de φ{fixed_bar_diameter_mm:.1f} mm"
+            if fixed_bar_diameter_mm is not None
+            else ""
+        )
+        suggestion = (
+            "Tente uma bitola maior ou volte para a escolha automática, "
+            if bitola_txt
+            else ""
+        )
         warnings.append(
             "Nenhuma combinação padrão de barras resiste à flexo-compressão de todas as "
-            f"estacas do lote (estaca mais exigente: {governing_id or '?'}). Aumente o "
-            "diâmetro da estaca, o fck do concreto, ou revise os esforços de cálculo."
+            f"estacas do lote{bitola_txt} (estaca mais exigente: {governing_id or '?'}). "
+            f"{suggestion}Aumente o diâmetro da estaca, o fck do concreto, ou revise os "
+            "esforços de cálculo."
         )
     else:
         warnings.append(

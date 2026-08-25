@@ -119,6 +119,13 @@ Depois de calcular a profundidade (aba 3), vá à aba 5 para a armação:
   classe de agressividade II - ajuste para 7 cm ou mais em ambientes mais
   agressivos) e **taxa mínima de armadura** (deixe em branco para usar o
   padrão por diâmetro).
+- **Bitola das barras longitudinais**: deixe em **Automática** (padrão) para
+  o programa buscar sozinho a menor bitola comercial que atenda; ou escolha
+  uma bitola fixa (ex.: 12,5 mm) se você já sabe qual quer usar (por
+  disponibilidade na obra, padronização do projeto etc.) - nesse caso o
+  programa só busca a quantidade de barras necessária com essa bitola. Se
+  nenhuma quantidade for suficiente, o resultado vem sem armadura e um aviso
+  explica o motivo; tente uma bitola maior ou volte para Automática.
 - **Bitola/espaçamento dos estribos** e o **comprimento de armação**: deixe
   em branco para armar a estaca inteira (mais seguro/conservador), ou
   informe um valor para armar só os primeiros metros a partir do topo

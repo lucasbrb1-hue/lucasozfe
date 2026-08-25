@@ -128,6 +128,36 @@ class TestComputeBatchReinforcement(unittest.TestCase):
         self.assertIsNotNone(result.structural.shear)
         self.assertAlmostEqual(result.structural.v_design_kn, 1.4 * 250.0)
 
+    def test_fixed_bar_diameter_without_moment(self):
+        geometry = PileGeometry(diameter_cm=40)
+        loads = [FoundationLoad("P1", 300.0), FoundationLoad("P2", 500.0)]
+        result = pg.compute_batch_reinforcement(loads, geometry, bar_diameter_mm=12.5)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertAlmostEqual(result.longitudinal.bar_diameter_mm, 12.5)
+
+    def test_fixed_bar_diameter_with_moment(self):
+        geometry = PileGeometry(diameter_cm=50)
+        loads = [
+            FoundationLoad("P1", 300.0, moment_kn_m=10.0),
+            FoundationLoad("P2", 800.0, moment_kn_m=180.0),
+        ]
+        result = pg.compute_batch_reinforcement(loads, geometry, bar_diameter_mm=20.0)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertAlmostEqual(result.longitudinal.bar_diameter_mm, 20.0)
+
+    def test_fixed_bar_diameter_too_small_yields_no_longitudinal(self):
+        geometry = PileGeometry(diameter_cm=25)
+        loads = [FoundationLoad("P1", 200.0, moment_kn_m=3000.0)]
+        result = pg.compute_batch_reinforcement(loads, geometry, bar_diameter_mm=8.0)
+        self.assertIsNone(result.longitudinal)
+        self.assertTrue(any("bitola fixada" in w for w in result.warnings))
+
+    def test_invalid_fixed_bar_diameter_raises(self):
+        geometry = PileGeometry(diameter_cm=50)
+        loads = [FoundationLoad("P1", 300.0, moment_kn_m=10.0)]
+        with self.assertRaises(ValueError):
+            pg.compute_batch_reinforcement(loads, geometry, bar_diameter_mm=0)
+
 
 if __name__ == "__main__":
     unittest.main()

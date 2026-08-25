@@ -22,7 +22,7 @@ from .loads import FoundationLoad, LoadSet
 from .models import PileGeometry, SPTProfile
 from .pile_factors import PILE_TYPES
 from .pile_type_advisor import SITE_QUESTIONS, PileTypeRecommendation, SiteConstraints, recommend_pile_types
-from .reinforcement import STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
+from .reinforcement import BAR_DIAMETERS_MM, STIRRUP_DIAMETERS_MM, default_rho_min_pct, design_reinforcement
 from .structural_design import GAMMA_C_STRUCTURAL
 from .soil_data import get_soil, soil_options
 
@@ -807,6 +807,26 @@ class SPTPilesApp(ttk.Frame):
         ).grid(row=r, column=2, sticky="w", padx=6)
         r += 1
 
+        ttk.Label(section_long, text="Bitola das barras longitudinais:").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
+        )
+        self.combo_bar_diameter = ttk.Combobox(
+            section_long,
+            values=["Automática"] + [str(v) for v in BAR_DIAMETERS_MM],
+            state="readonly",
+            width=12,
+        )
+        self.combo_bar_diameter.current(0)
+        self.combo_bar_diameter.grid(row=r, column=1, sticky="w")
+        ttk.Label(
+            section_long,
+            text="(padrão: o software escolhe a menor bitola que atenda; fixe para escolher você mesmo)",
+            foreground="#666666",
+            wraplength=420,
+            justify="left",
+        ).grid(row=r, column=2, sticky="w", padx=6)
+        r += 1
+
         # -- Seção 2: estribos -----------------------------------------------
         section_stirrup = ttk.LabelFrame(inputs, text="2. Estribos")
         section_stirrup.pack(fill="x", padx=4, pady=6)
@@ -1143,6 +1163,12 @@ class SPTPilesApp(ttk.Frame):
         self.entry_shear.delete(0, tk.END)
         self.entry_shear.insert(0, f"{resultant:.3f}")
 
+    def _selected_bar_diameter_mm(self) -> float | None:
+        selection = self.combo_bar_diameter.get().strip()
+        if not selection or selection == "Automática":
+            return None
+        return float(selection)
+
     def _calculate_reinforcement(self) -> None:
         if self.solver_result is None or getattr(self, "_geometry", None) is None:
             messagebox.showinfo("Calcule primeiro", "Calcule a profundidade necessária na aba 2/3 antes de dimensionar a armação.")
@@ -1164,6 +1190,7 @@ class SPTPilesApp(ttk.Frame):
             fyk = float(self.entry_fyk.get().replace(",", "."))
             load_factor = float(self.entry_load_factor.get().replace(",", "."))
             gamma_c = float(self.entry_gamma_c.get().replace(",", "."))
+            bar_diameter_mm = self._selected_bar_diameter_mm()
 
             result = design_reinforcement(
                 self._geometry,
@@ -1180,6 +1207,7 @@ class SPTPilesApp(ttk.Frame):
                 fck_mpa=fck,
                 fyk_mpa=fyk,
                 gamma_c=gamma_c,
+                bar_diameter_mm=bar_diameter_mm,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Erro no cálculo de armação", str(exc))
@@ -1767,11 +1795,13 @@ class SPTPilesApp(ttk.Frame):
             fyk = float(self.entry_fyk.get().replace(",", "."))
             load_factor = float(self.entry_load_factor.get().replace(",", "."))
             gamma_c = float(self.entry_gamma_c.get().replace(",", "."))
+            bar_diameter_mm = self._selected_bar_diameter_mm()
             self.reinforcement_result = pg.compute_batch_reinforcement(
                 self.load_set.items, geometry, cover_cm=cover, rho_min_pct=rho_min,
                 stirrup_diameter_mm=stirrup_d, stirrup_spacing_body_cm=spacing_body,
                 stirrup_spacing_top_cm=spacing_top, armor_length_m=armor_length,
                 load_factor=load_factor, fck_mpa=fck, fyk_mpa=fyk, gamma_c=gamma_c,
+                bar_diameter_mm=bar_diameter_mm,
             )
             self._render_reinforcement(self.reinforcement_result)
         except Exception:  # noqa: BLE001 - armação é complementar; falha aqui não impede o resultado em lote

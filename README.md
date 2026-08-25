@@ -12,7 +12,9 @@ estacas a partir de um perfil de sondagem SPT (Standard Penetration Test):
   (Mk) característico é informado, dimensiona de verdade por **interação
   N-M (flexo-compressão)** e, se o cortante (Hk) também for informado,
   dimensiona os estribos ao **cisalhamento** - ver "Dimensionamento
-  estrutural" abaixo.
+  estrutural" abaixo. A **bitola das barras longitudinais** pode ser
+  escolhida automaticamente (menor bitola comercial que atenda) ou fixada
+  manualmente pelo usuário.
 - Suporta os tipos de estaca: hélice contínua, escavada (broca), pré-moldada
   cravada e Strauss.
 - **Interpreta laudos de sondagem SPT em PDF via IA** (API da Claude,

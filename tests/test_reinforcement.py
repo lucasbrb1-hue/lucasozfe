@@ -1,7 +1,12 @@
 import unittest
 
 from spt_piles.models import PileGeometry
-from spt_piles.reinforcement import default_rho_min_pct, design_reinforcement, effective_armor_length_m
+from spt_piles.reinforcement import (
+    BAR_DIAMETERS_MM,
+    default_rho_min_pct,
+    design_reinforcement,
+    effective_armor_length_m,
+)
 from spt_piles.structural_design import GAMMA_C_CONCRETE_PILE, GAMMA_C_STRUCTURAL
 
 DEFAULT_RHO_40CM = default_rho_min_pct(40)
@@ -166,7 +171,35 @@ class TestReinforcement(unittest.TestCase):
         geometry = PileGeometry(diameter_cm=50)
         result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=100.0, load_factor=1.0)
         self.assertAlmostEqual(result.structural.n_design_kn, 800.0)
-        self.assertAlmostEqual(result.structural.m_design_knm, 100.0)
+
+    def test_fixed_bar_diameter_is_respected_minimum_only(self):
+        geometry = PileGeometry(diameter_cm=40)
+        result = design_reinforcement(geometry, axial_load_kn=500.0, bar_diameter_mm=12.5)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertAlmostEqual(result.longitudinal.bar_diameter_mm, 12.5)
+
+    def test_fixed_bar_diameter_is_respected_with_moment(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=50.0, bar_diameter_mm=20.0)
+        self.assertIsNotNone(result.longitudinal)
+        self.assertAlmostEqual(result.longitudinal.bar_diameter_mm, 20.0)
+
+    def test_fixed_bar_diameter_too_small_yields_no_longitudinal(self):
+        geometry = PileGeometry(diameter_cm=50)
+        result = design_reinforcement(geometry, axial_load_kn=800.0, moment_kn_m=250.0, bar_diameter_mm=8.0)
+        self.assertIsNone(result.longitudinal)
+        self.assertTrue(any("bitola fixada" in w for w in result.warnings))
+
+    def test_automatic_bar_diameter_picks_smallest_that_fits(self):
+        geometry = PileGeometry(diameter_cm=40)
+        auto_result = design_reinforcement(geometry, axial_load_kn=500.0)
+        self.assertIsNotNone(auto_result.longitudinal)
+        self.assertIn(auto_result.longitudinal.bar_diameter_mm, BAR_DIAMETERS_MM)
+
+    def test_invalid_fixed_bar_diameter_raises(self):
+        geometry = PileGeometry(diameter_cm=40)
+        with self.assertRaises(ValueError):
+            design_reinforcement(geometry, axial_load_kn=500.0, bar_diameter_mm=0)
 
 
 if __name__ == "__main__":

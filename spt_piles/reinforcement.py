@@ -133,10 +133,16 @@ def _try_design(
     cover_cm: float,
     stirrup_diameter_mm: float,
     as_min_cm2: float,
+    bar_diameter_mm: float | None = None,
 ) -> LongitudinalDesign | None:
-    radius_cm = geometry.diameter_cm / 2.0
+    """`bar_diameter_mm`: se informado, fixa a bitola longitudinal (só busca
+    o número de barras) em vez de testar todas as bitolas de BAR_DIAMETERS_MM
+    da menor para a maior."""
 
-    for bar_diameter_mm in BAR_DIAMETERS_MM:
+    radius_cm = geometry.diameter_cm / 2.0
+    candidate_diameters = [bar_diameter_mm] if bar_diameter_mm is not None else BAR_DIAMETERS_MM
+
+    for bar_diameter_mm in candidate_diameters:
         bar_cm = bar_diameter_mm / 10.0
         bar_center_radius = radius_cm - cover_cm - (stirrup_diameter_mm / 10.0) - bar_cm / 2.0
         if bar_center_radius <= 0:
@@ -170,16 +176,22 @@ def _try_design_with_structural_check(
     n_design_kn: float,
     m_design_knm: float,
     gamma_c: float = GAMMA_C_STRUCTURAL,
+    bar_diameter_mm: float | None = None,
 ) -> tuple[LongitudinalDesign | None, FlexoCompressionCheck | None]:
     """Como `_try_design`, mas também exige que a combinação de barras resista
     à flexo-compressão (N-M) de cálculo, não só à taxa mínima. Retorna a
     menor combinação viável e a última verificação tentada (para diagnóstico
-    quando nenhuma combinação for suficiente)."""
+    quando nenhuma combinação for suficiente).
+
+    `bar_diameter_mm`: se informado, fixa a bitola longitudinal (só busca o
+    número de barras) em vez de testar todas as bitolas de BAR_DIAMETERS_MM
+    da menor para a maior."""
 
     radius_cm = geometry.diameter_cm / 2.0
     last_check: FlexoCompressionCheck | None = None
+    candidate_diameters = [bar_diameter_mm] if bar_diameter_mm is not None else BAR_DIAMETERS_MM
 
-    for bar_diameter_mm in BAR_DIAMETERS_MM:
+    for bar_diameter_mm in candidate_diameters:
         bar_cm = bar_diameter_mm / 10.0
         bar_center_radius = radius_cm - cover_cm - (stirrup_diameter_mm / 10.0) - bar_cm / 2.0
         if bar_center_radius <= 0:
@@ -228,6 +240,7 @@ def design_reinforcement(
     fck_mpa: float = MIN_FCK_MPA_CLASS_I_II,
     fyk_mpa: float = 500.0,
     gamma_c: float = GAMMA_C_STRUCTURAL,
+    bar_diameter_mm: float | None = None,
 ) -> ReinforcementResult:
     """`armor_length_m`: comprimento desejado de armadura longitudinal a
     partir do topo da estaca. None (padrão) arma toda a extensão da estaca -
@@ -258,7 +271,16 @@ def design_reinforcement(
     NBR 6122:2022 8.6.2 para estacas moldadas in loco em ambiente de classe
     de agressividade II (a mais comum para estacas enterradas); ambientes
     mais agressivos (classes III/IV) exigem cobrimento >= 7 cm e fck >= 40
-    MPa - ajuste conforme a classe do seu projeto (NBR 6118, tabela 7.2)."""
+    MPa - ajuste conforme a classe do seu projeto (NBR 6118, tabela 7.2).
+
+    `bar_diameter_mm`: None (padrão) deixa o software escolher automaticamente
+    a menor bitola comercial (de BAR_DIAMETERS_MM) que atenda ao espaçamento
+    mínimo e à taxa/verificação estrutural exigida. Informe um valor (ex:
+    12.5) para FIXAR a bitola das barras longitudinais - o software então só
+    busca o número de barras com essa bitola; se nenhuma quantidade (entre
+    MIN_BARS e MAX_BARS) for suficiente com a bitola fixada, o resultado vem
+    sem armadura (`longitudinal is None`) com aviso explicando o motivo -
+    nesse caso, tente uma bitola maior ou volte para a escolha automática."""
 
     if geometry.diameter_cm <= 0:
         raise ValueError("Diâmetro da estaca deve ser maior que zero.")
@@ -268,6 +290,8 @@ def design_reinforcement(
         raise ValueError("Profundidade de armação deve ser maior que zero.")
     if load_factor <= 0:
         raise ValueError("Fator de majoração (γf) deve ser maior que zero.")
+    if bar_diameter_mm is not None and bar_diameter_mm <= 0:
+        raise ValueError("Bitola das barras longitudinais deve ser maior que zero.")
 
     gross_area_cm2 = geometry.area_m2 * 1e4
     rho = rho_min_pct if rho_min_pct is not None else default_rho_min_pct(geometry.diameter_cm)
@@ -295,26 +319,28 @@ def design_reinforcement(
         m_design_knm = load_factor * moment_kn_m
         longitudinal, flexo_check = _try_design_with_structural_check(
             geometry, cover_cm, stirrup_diameter_mm, as_min_cm2, fck_mpa, fyk_mpa,
-            n_design_kn, m_design_knm, gamma_c=gamma_c,
+            n_design_kn, m_design_knm, gamma_c=gamma_c, bar_diameter_mm=bar_diameter_mm,
         )
+        bitola_txt = f" com a bitola fixada de φ{bar_diameter_mm:.1f} mm" if bar_diameter_mm is not None else ""
         if longitudinal is None:
             if flexo_check is None:
                 warnings.append(
-                    "Não foi possível encontrar uma combinação padrão de barras que respeite o "
-                    "espaçamento mínimo com o cobrimento informado."
+                    f"Não foi possível encontrar uma combinação de barras{bitola_txt} que respeite "
+                    "o espaçamento mínimo com o cobrimento informado."
+                    + (" Tente uma bitola menor." if bar_diameter_mm is not None else "")
                 )
             elif flexo_check.m_capacity_knm is None:
                 warnings.append(
-                    f"Mesmo com a maior combinação de barras testada, a força normal de cálculo "
-                    f"(Nd={n_design_kn:.1f} kN) excede a capacidade última à compressão da seção - "
-                    "aumente o diâmetro da estaca ou o fck do concreto."
+                    f"Mesmo com a maior quantidade de barras testada{bitola_txt}, a força normal de "
+                    f"cálculo (Nd={n_design_kn:.1f} kN) excede a capacidade última à compressão da "
+                    "seção - aumente o diâmetro da estaca ou o fck do concreto."
                 )
             else:
                 warnings.append(
-                    f"Nenhuma combinação padrão de barras resiste à flexo-compressão de cálculo "
+                    f"Nenhuma combinação de barras{bitola_txt} resiste à flexo-compressão de cálculo "
                     f"(Nd={n_design_kn:.1f} kN, Md={m_design_knm:.1f} kN·m; melhor capacidade "
                     f"encontrada Mrd={flexo_check.m_capacity_knm:.1f} kN·m). Aumente o diâmetro da "
-                    "estaca, o fck do concreto, ou revise os esforços de cálculo."
+                    "estaca, o fck do concreto, a bitola fixada, ou revise os esforços de cálculo."
                 )
         else:
             warnings.append(
@@ -355,13 +381,15 @@ def design_reinforcement(
             shear=shear_result,
         )
     else:
-        longitudinal = _try_design(geometry, cover_cm, stirrup_diameter_mm, as_min_cm2)
+        longitudinal = _try_design(geometry, cover_cm, stirrup_diameter_mm, as_min_cm2, bar_diameter_mm=bar_diameter_mm)
         if longitudinal is None:
+            bitola_txt = f" com a bitola fixada de φ{bar_diameter_mm:.1f} mm" if bar_diameter_mm is not None else ""
             warnings.append(
-                "Não foi possível encontrar uma combinação padrão de barras que respeite o "
+                f"Não foi possível encontrar uma combinação de barras{bitola_txt} que respeite o "
                 "espaçamento mínimo com o cobrimento informado. Avalie aumentar o diâmetro "
-                "da estaca, reduzir o cobrimento (respeitando o mínimo normativo) ou revisar "
-                "manualmente a disposição das barras."
+                "da estaca, reduzir o cobrimento (respeitando o mínimo normativo)"
+                + (", usar outra bitola" if bar_diameter_mm is not None else "")
+                + " ou revisar manualmente a disposição das barras."
             )
 
     confinement_length_m = confinement_length_factor * geometry.diameter_m
