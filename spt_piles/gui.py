@@ -1742,7 +1742,14 @@ class SPTPilesApp(ttk.Frame):
             return
 
         self.button_ai_loads_run.config(state="disabled")
-        self.label_ai_loads_status.config(text="Processando com IA... isso pode levar até 1 minuto.", foreground="#1a6fd6")
+        self.label_ai_loads_status.config(
+            text=(
+                "Processando com IA... para relatórios com poucos elementos costuma levar "
+                "menos de 1 minuto, mas relatórios com uma tabela de combinações extensa por "
+                "elemento (ex: Eberick) podem levar vários minutos - aguarde."
+            ),
+            foreground="#1a6fd6",
+        )
 
         def worker() -> None:
             try:

@@ -44,6 +44,7 @@ def _call_pdf_tool(
     tool_schema: dict,
     user_instruction: str,
     model: str | None = None,
+    max_tokens: int = 8000,
 ) -> tuple[dict, str]:
     """Envia um PDF para a API da Claude forçando a chamada de `tool_schema` e
     retorna o dicionário de entrada (`input`) que o modelo preencheu.
@@ -51,7 +52,14 @@ def _call_pdf_tool(
     Levanta AIExtractionError com uma mensagem amigável em caso de falha
     (biblioteca ausente, chave ausente, PDF inválido, erro de rede, resposta
     inesperada etc.). Compartilhado por todas as extrações via IA deste app.
-    """
+
+    Usa a chamada em streaming (`client.messages.stream`), não a chamada
+    direta (`client.messages.create`): para `max_tokens` mais altos (ver
+    `extract_foundation_loads`, cujo schema pode exigir uma saída bem maior
+    quando o relatório traz uma envoltória de combinações extensa), o SDK da
+    Anthropic recusa a chamada direta com "Streaming is required for
+    operations that may take longer than 10 minutes" - streaming evita esse
+    erro e também reflete melhor o progresso em respostas longas."""
 
     try:
         import anthropic
@@ -81,9 +89,9 @@ def _call_pdf_tool(
     tool_name = tool_schema["name"]
 
     try:
-        response = client.messages.create(
+        with client.messages.stream(
             model=model_name,
-            max_tokens=8000,
+            max_tokens=max_tokens,
             system=system_prompt,
             tools=[tool_schema],
             tool_choice={"type": "tool", "name": tool_name},
@@ -103,7 +111,8 @@ def _call_pdf_tool(
                     ],
                 }
             ],
-        )
+        ) as stream:
+            response = stream.get_final_message()
     except Exception as exc:  # noqa: BLE001 - qualquer erro de API deve virar mensagem amigável
         raise AIExtractionError(f"Falha ao chamar a API da Claude: {exc}") from exc
 
@@ -112,6 +121,15 @@ def _call_pdf_tool(
         raise AIExtractionError(
             "A IA não retornou dados estruturados. Verifique se o PDF contém um "
             "documento legível do tipo esperado e tente novamente."
+        )
+    if response.stop_reason == "max_tokens":
+        raise AIExtractionError(
+            f"A resposta da IA foi cortada por exceder o limite de {max_tokens} tokens "
+            "de saída - provavelmente o relatório tem elementos/combinações demais para "
+            "extrair de uma vez. Se for um relatório de esforços com uma tabela de "
+            "combinações extensa (ex: Eberick), prefira o botão \"Importar XLSX de "
+            "combinações (Eberick)...\", que lê a planilha diretamente (mais confiável e "
+            "sem esse limite) - ou tente dividir o PDF em partes menores."
         )
 
     return tool_block.input, model_name
@@ -521,6 +539,13 @@ def extract_foundation_loads(pdf_path: str, model: str | None = None) -> Extract
         _build_loads_tool_schema(),
         "Extraia todos os esforços (cargas características) de fundação deste relatório, seguindo exatamente o schema da ferramenta fornecida.",
         model,
+        # Relatórios com envoltória de combinações (ex: "Esforços nas Fundações
+        # por Elementos" do Eberick) podem ter dezenas de elementos x dezenas
+        # de combinações cada - a saída estruturada correspondente é bem maior
+        # que o padrão de 8000 tokens (que já é suficiente para o laudo de
+        # SPT). Sem isso, relatórios grandes eram cortados no meio (ou o SDK
+        # recusava a chamada) e a extração parecia travada.
+        max_tokens=32000,
     )
     return _parse_loads_tool_output(data, pdf_path, model_name)
 
