@@ -65,6 +65,8 @@ class SPTPilesApp(ttk.Frame):
     def _build_widgets(self) -> None:
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=8, pady=8)
+        self.notebook = notebook
+        notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self.tab_settings = ttk.Frame(notebook)
         self.tab_profile = ttk.Frame(notebook)
@@ -102,6 +104,55 @@ class SPTPilesApp(ttk.Frame):
             foreground="#7a4a00",
         )
         footer.pack(fill="x", padx=8, pady=(0, 6))
+
+    def _on_tab_changed(self, _event=None) -> None:
+        if hasattr(self, "label_reinforcement_status"):
+            self._refresh_reinforcement_status()
+
+    @staticmethod
+    def _make_scrollable_frame(parent: tk.Widget, height: int) -> ttk.Frame:
+        """Cria uma área com rolagem vertical dentro de `parent` (um Canvas +
+        Scrollbar) e retorna o Frame interno onde o conteúdo deve ser
+        adicionado - usado em abas com muitos campos, para que o formulário
+        nunca fique cortado pela altura da janela."""
+
+        container = ttk.Frame(parent)
+        container.pack(fill="x", padx=8, pady=4)
+        canvas = tk.Canvas(container, height=height, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _sync_scrollregion(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _sync_width(event) -> None:
+            canvas.itemconfig(window_id, width=event.width)
+
+        inner.bind("<Configure>", _sync_scrollregion)
+        canvas.bind("<Configure>", _sync_width)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        def _on_mousewheel(event) -> None:
+            delta = -1 * (event.delta // 120) if event.delta else (-1 if event.num == 4 else 1)
+            canvas.yview_scroll(int(delta), "units")
+
+        def _bind_mousewheel(_event=None) -> None:
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", _on_mousewheel)
+            canvas.bind_all("<Button-5>", _on_mousewheel)
+
+        def _unbind_mousewheel(_event=None) -> None:
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", _bind_mousewheel)
+        canvas.bind("<Leave>", _unbind_mousewheel)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        return inner
 
     # -- Aba de Configurações ------------------------------------------------
     def _build_tab_settings(self) -> None:
@@ -527,9 +578,13 @@ class SPTPilesApp(ttk.Frame):
         for attr, question in SITE_QUESTIONS:
             var = tk.BooleanVar(value=False)
             self.pile_advisor_vars[attr] = var
-            ttk.Checkbutton(questions_frame, text=question, variable=var, wraplength=850).pack(
-                anchor="w", pady=2
-            )
+            row = ttk.Frame(questions_frame)
+            row.pack(fill="x", pady=2, anchor="w")
+            check = ttk.Checkbutton(row, variable=var)
+            check.pack(side="left", anchor="n")
+            label = ttk.Label(row, text=question, wraplength=850, justify="left")
+            label.pack(side="left", anchor="w")
+            label.bind("<Button-1>", lambda _e, v=var: v.set(not v.get()))
 
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x", padx=8, pady=8)
@@ -712,79 +767,100 @@ class SPTPilesApp(ttk.Frame):
 
     def _build_tab_reinforcement(self) -> None:
         frame = self.tab_reinforcement
-        grid = ttk.Frame(frame)
-        grid.pack(fill="x", padx=12, pady=12)
+
+        self.label_reinforcement_status = ttk.Label(frame, text="", font=("TkDefaultFont", 10, "bold"))
+        self.label_reinforcement_status.pack(fill="x", padx=12, pady=(10, 4))
+
+        inputs = self._make_scrollable_frame(frame, height=360)
+
+        # -- Seção 1: armadura longitudinal e cobrimento --------------------
+        section_long = ttk.LabelFrame(inputs, text="1. Armadura longitudinal e cobrimento")
+        section_long.pack(fill="x", padx=4, pady=6)
 
         r = 0
         ttk.Label(
-            grid, text="Cobrimento (cm) [mín. NBR 6122:2022: 5cm classe II, 7cm classes III/IV]:"
-        ).grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_cover = ttk.Entry(grid, width=10)
+            section_long, text="Cobrimento (cm) [mín. NBR 6122:2022: 5cm classe II, 7cm classes III/IV]:"
+        ).grid(row=r, column=0, sticky="w", padx=6, pady=4)
+        self.entry_cover = ttk.Entry(section_long, width=10)
         self.entry_cover.insert(0, "5.0")
         self.entry_cover.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="Taxa mínima de armadura (%) [vazio = padrão]:").grid(
-            row=r, column=0, sticky="w", pady=4
+        ttk.Label(section_long, text="Taxa mínima de armadura (%) [vazio = padrão pelo diâmetro]:").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
         )
-        self.entry_rho_min = ttk.Entry(grid, width=10)
+        self.entry_rho_min = ttk.Entry(section_long, width=10)
         self.entry_rho_min.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="Bitola do estribo (mm):").grid(row=r, column=0, sticky="w", pady=4)
+        ttk.Label(
+            section_long, text="Profundidade de armação (m) [vazio = toda a extensão da estaca]:"
+        ).grid(row=r, column=0, sticky="w", padx=6, pady=4)
+        self.entry_armor_length = ttk.Entry(section_long, width=10)
+        self.entry_armor_length.grid(row=r, column=1, sticky="w")
+        ttk.Label(
+            section_long,
+            text="(só vale para estacas só à compressão axial - confirme com o eng. responsável)",
+            foreground="#7a4a00",
+            wraplength=420,
+            justify="left",
+        ).grid(row=r, column=2, sticky="w", padx=6)
+        r += 1
+
+        # -- Seção 2: estribos -----------------------------------------------
+        section_stirrup = ttk.LabelFrame(inputs, text="2. Estribos")
+        section_stirrup.pack(fill="x", padx=4, pady=6)
+
+        r = 0
+        ttk.Label(section_stirrup, text="Bitola do estribo (mm):").grid(row=r, column=0, sticky="w", padx=6, pady=4)
         self.combo_stirrup = ttk.Combobox(
-            grid, values=[str(v) for v in STIRRUP_DIAMETERS_MM], state="readonly", width=10
+            section_stirrup, values=[str(v) for v in STIRRUP_DIAMETERS_MM], state="readonly", width=10
         )
         self.combo_stirrup.current(1)
         self.combo_stirrup.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="Espaçamento estribo no fuste (cm):").grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_stirrup_body = ttk.Entry(grid, width=10)
+        ttk.Label(section_stirrup, text="Espaçamento no fuste (cm):").grid(row=r, column=0, sticky="w", padx=6, pady=4)
+        self.entry_stirrup_body = ttk.Entry(section_stirrup, width=10)
         self.entry_stirrup_body.insert(0, "15")
         self.entry_stirrup_body.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="Espaçamento estribo na zona de confinamento (cm):").grid(
-            row=r, column=0, sticky="w", pady=4
+        ttk.Label(section_stirrup, text="Espaçamento na zona de confinamento (cm):").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
         )
-        self.entry_stirrup_top = ttk.Entry(grid, width=10)
+        self.entry_stirrup_top = ttk.Entry(section_stirrup, width=10)
         self.entry_stirrup_top.insert(0, "10")
         self.entry_stirrup_top.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="Profundidade de armação (m) [vazio = toda a extensão da estaca]:").grid(
-            row=r, column=0, sticky="w", pady=4
+        # -- Seção 3: esforços (opcional) ------------------------------------
+        section_loads = ttk.LabelFrame(
+            inputs, text="3. Esforços para dimensionamento estrutural (opcional)"
         )
-        self.entry_armor_length = ttk.Entry(grid, width=10)
-        self.entry_armor_length.grid(row=r, column=1, sticky="w")
-        ttk.Label(
-            grid,
-            text="(armadura parcial só vale para estacas só à compressão axial - confirme com o eng. responsável)",
-            foreground="#7a4a00",
-        ).grid(row=r, column=2, sticky="w", padx=6)
-        r += 1
+        section_loads.pack(fill="x", padx=4, pady=6)
 
-        ttk.Separator(grid, orient="horizontal").grid(row=r, column=0, columnspan=3, sticky="ew", pady=8)
-        r += 1
+        r = 0
         ttk.Label(
-            grid,
+            section_loads,
             text=(
-                "Dimensionamento estrutural (opcional): informe o momento para substituir a "
-                "armadura mínima por um dimensionamento real de flexo-compressão (N-M) e "
+                "Deixe em branco para armar só pela taxa mínima (estaca só à compressão). "
+                "Informe o momento para dimensionar de verdade por flexo-compressão (N-M) e "
                 "cisalhamento (V). Use sempre valores CARACTERÍSTICOS (não majorados)."
             ),
             wraplength=650, justify="left", foreground="#7a4a00",
-        ).grid(row=r, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        ).grid(row=r, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
         r += 1
 
-        ttk.Label(grid, text="Momento característico Mk (kN·m) [opcional]:").grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_moment = ttk.Entry(grid, width=10)
+        ttk.Label(section_loads, text="Momento característico Mk (kN·m):").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entry_moment = ttk.Entry(section_loads, width=10)
         self.entry_moment.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="  ...ou componentes Mx, My (kN·m):").grid(row=r, column=0, sticky="w")
-        mxy_frame = ttk.Frame(grid)
+        ttk.Label(section_loads, text="  ...ou componentes Mx, My (kN·m):").grid(row=r, column=0, sticky="w", padx=6)
+        mxy_frame = ttk.Frame(section_loads)
         mxy_frame.grid(row=r, column=1, columnspan=2, sticky="w")
         self.entry_moment_x = ttk.Entry(mxy_frame, width=8)
         self.entry_moment_x.pack(side="left", padx=2)
@@ -795,13 +871,15 @@ class SPTPilesApp(ttk.Frame):
         ).pack(side="left", padx=6)
         r += 1
 
-        ttk.Label(grid, text="Cortante característico Hk (kN) [opcional]:").grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_shear = ttk.Entry(grid, width=10)
+        ttk.Label(section_loads, text="Cortante característico Hk (kN):").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entry_shear = ttk.Entry(section_loads, width=10)
         self.entry_shear.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="  ...ou componentes Hx, Hy (kN):").grid(row=r, column=0, sticky="w")
-        hxy_frame = ttk.Frame(grid)
+        ttk.Label(section_loads, text="  ...ou componentes Hx, Hy (kN):").grid(row=r, column=0, sticky="w", padx=6)
+        hxy_frame = ttk.Frame(section_loads)
         hxy_frame.grid(row=r, column=1, columnspan=2, sticky="w")
         self.entry_shear_x = ttk.Entry(hxy_frame, width=8)
         self.entry_shear_x.pack(side="left", padx=2)
@@ -812,45 +890,122 @@ class SPTPilesApp(ttk.Frame):
         ).pack(side="left", padx=6)
         r += 1
 
+        # -- Seção 4: parâmetros de material/normativos ----------------------
+        section_material = ttk.LabelFrame(
+            inputs, text="4. Parâmetros de material e normativos (avançado)"
+        )
+        section_material.pack(fill="x", padx=4, pady=6)
+
+        r = 0
         ttk.Label(
-            grid, text="fck do concreto (MPa) [mín. NBR 6122:2022: 30 classe I/II, 40 classes III/IV]:"
-        ).grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_fck = ttk.Entry(grid, width=10)
+            section_material,
+            text="Os padrões abaixo já atendem à NBR 6118/6122 para o caso mais comum - só ajuste "
+            "se o seu projeto exigir (outra classe de agressividade, tipo de estaca, γf do seu "
+            "software estrutural).",
+            wraplength=650, justify="left", foreground="#666666",
+        ).grid(row=r, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        r += 1
+
+        ttk.Label(
+            section_material, text="fck do concreto (MPa) [mín.: 30 classe I/II, 40 classes III/IV]:"
+        ).grid(row=r, column=0, sticky="w", padx=6, pady=4)
+        self.entry_fck = ttk.Entry(section_material, width=10)
         self.entry_fck.insert(0, "30")
         self.entry_fck.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="fyk do aço (MPa):").grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_fyk = ttk.Entry(grid, width=10)
+        ttk.Label(section_material, text="fyk do aço (MPa):").grid(row=r, column=0, sticky="w", padx=6, pady=4)
+        self.entry_fyk = ttk.Entry(section_material, width=10)
         self.entry_fyk.insert(0, "500")
         self.entry_fyk.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(grid, text="Fator de majoração γf (Nk/Mk/Hk -> Nd/Md/Vd):").grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_load_factor = ttk.Entry(grid, width=10)
+        ttk.Label(section_material, text="Fator de majoração γf (Nk/Mk/Hk -> Nd/Md/Vd):").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entry_load_factor = ttk.Entry(section_material, width=10)
         self.entry_load_factor.insert(0, "1.4")
         self.entry_load_factor.grid(row=r, column=1, sticky="w")
         r += 1
 
-        ttk.Label(
-            grid, text="Coef. de ponderação do concreto γc (estacas, NBR 6122:2022 8.6.3):"
-        ).grid(row=r, column=0, sticky="w", pady=4)
-        self.entry_gamma_c = ttk.Entry(grid, width=10)
+        ttk.Label(section_material, text="Coef. de ponderação do concreto γc (NBR 6122:2022 8.6.3):").grid(
+            row=r, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entry_gamma_c = ttk.Entry(section_material, width=10)
         self.entry_gamma_c.insert(0, str(GAMMA_C_CONCRETE_PILE))
         self.entry_gamma_c.grid(row=r, column=1, sticky="w")
         ttk.Label(
-            grid,
-            text="  padrão conservador p/ moldada in loco; use 1.4 para pré-moldada c/ controle de fábrica",
+            section_material,
+            text="padrão conservador p/ moldada in loco; use 1.4 para pré-moldada c/ controle de fábrica",
             foreground="#666666",
+            wraplength=420,
+            justify="left",
         ).grid(row=r, column=2, sticky="w", padx=6)
         r += 1
 
-        ttk.Button(grid, text="Calcular armação", command=self._calculate_reinforcement).grid(
-            row=r, column=0, columnspan=2, pady=12
-        )
+        action_frame = ttk.Frame(frame)
+        action_frame.pack(fill="x", padx=12, pady=(4, 8))
+        ttk.Button(action_frame, text="Calcular armação", command=self._calculate_reinforcement).pack(side="left")
 
-        self.text_reinforcement = tk.Text(frame, height=14, wrap="word")
-        self.text_reinforcement.pack(fill="both", expand=True, padx=12, pady=8)
+        result_frame = ttk.Frame(frame)
+        result_frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self.text_reinforcement = tk.Text(result_frame, height=12, wrap="word")
+        scroll_reinforcement = ttk.Scrollbar(
+            result_frame, orient="vertical", command=self.text_reinforcement.yview
+        )
+        self.text_reinforcement.configure(yscrollcommand=scroll_reinforcement.set)
+        self.text_reinforcement.pack(side="left", fill="both", expand=True)
+        scroll_reinforcement.pack(side="right", fill="y")
+
+        self._refresh_reinforcement_status()
+
+    def _refresh_reinforcement_status(self) -> None:
+        """Atualiza o aviso no topo da aba de Armação. O botão "Calcular
+        armação" desta aba dimensiona UMA estaca e depende de `solver_result`
+        (calculado na aba 3); o fluxo em lote (aba 6) não passa por aqui, por
+        isso o aviso deixa claro que pode ser ignorado nesse caso."""
+
+        geometry = getattr(self, "_geometry", None)
+        batch_hint = " (se você usa o cálculo em lote da aba 6, pode ignorar este aviso)"
+
+        if geometry is None:
+            self.label_reinforcement_status.config(
+                text=(
+                    "⚠ Para dimensionar UMA estaca aqui, calcule a profundidade necessária na "
+                    f"aba '3. Estaca e Carga' primeiro{batch_hint}."
+                ),
+                foreground="#b00020",
+            )
+            return
+        if self.solver_result is None:
+            self.label_reinforcement_status.config(
+                text=(
+                    f"Diâmetro atual: {geometry.diameter_cm:.0f} cm. Para dimensionar UMA estaca "
+                    "aqui, clique em 'Calcular profundidade necessária' na aba 3 (isso define a "
+                    f"carga usada){batch_hint}."
+                ),
+                foreground="#b00020",
+            )
+            return
+        if self.solver_result.required_depth_m is None:
+            self.label_reinforcement_status.config(
+                text=(
+                    f"Diâmetro atual: {geometry.diameter_cm:.0f} cm, carga "
+                    f"{self.solver_result.load_kn:.1f} kN - essa carga NÃO é atingida dentro da "
+                    "profundidade sondada (aba 3). Revise a carga, o diâmetro ou o perfil de SPT "
+                    f"antes de armar{batch_hint}."
+                ),
+                foreground="#b00020",
+            )
+            return
+        self.label_reinforcement_status.config(
+            text=(
+                f"Estaca atual: diâmetro {geometry.diameter_cm:.0f} cm, carga "
+                f"{self.solver_result.load_kn:.1f} kN, profundidade "
+                f"{self.solver_result.required_depth_m:.2f} m (calculada na aba 3)."
+            ),
+            foreground="#0a6e0a",
+        )
 
     # ------------------------------------------------------------- ações
     def _calculate(self) -> None:
@@ -877,6 +1032,8 @@ class SPTPilesApp(ttk.Frame):
         self._pile_type = pile_type
         self._fs = fs
         self._refresh_results()
+        if hasattr(self, "label_reinforcement_status"):
+            self._refresh_reinforcement_status()
 
     def _refresh_results(self) -> None:
         result = self.solver_result
@@ -1536,6 +1693,8 @@ class SPTPilesApp(ttk.Frame):
         self._geometry = geometry
         self._pile_type = pile_type
         self._fs = fs
+        if hasattr(self, "label_reinforcement_status"):
+            self._refresh_reinforcement_status()
 
         try:
             cover = float(self.entry_cover.get().replace(",", "."))
