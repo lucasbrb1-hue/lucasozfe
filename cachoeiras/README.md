@@ -17,6 +17,7 @@ Digite uma cidade: o servidor define uma área ao redor (até ~0,4°), roda o Ea
 (rios MERIT Hydro + desnível SRTM) e devolve até 50 pontos com **probabilidade**.
 Nota base = mais queda e mais água => mais provável. Com `ANTHROPIC_API_KEY`, os 10 melhores
 têm a imagem de satélite avaliada por um modelo de visão e a nota final é a média das duas.
+As buscas ficam salvas em `dados/buscas.db` (SQLite) e aparecem em "Buscas salvas" para reabrir sem refazer.
 São candidatas: confirme visualmente (barragens e corredeiras podem passar).
 
 ## Só o mapa (sem busca)

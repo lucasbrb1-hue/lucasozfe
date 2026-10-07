@@ -39,6 +39,40 @@
   busca.oninput = render;
   render();
 
+  function mostrarResultado(dados) {
+    itens.filter(i => i.tipo === "candidata").forEach(i => mapa.remover(marcadores.get(i.id)));
+    itens = itens.filter(i => i.tipo !== "candidata");
+    dados.candidatas.forEach((c, i) => {
+      const it = {
+        id: "cand-" + i, nome: "Candidata #" + (i + 1), estado: "", tipo: "candidata",
+        lat: c.lat, lng: c.lng, altura_m: c.queda_m, probabilidade: c.probabilidade,
+        descricao: `Probabilidade ${c.probabilidade}%. Queda estimada ${c.queda_m} m, ` +
+          `área de drenagem ${c.area_km2} km².` + (c.ia_motivo ? " IA: " + c.ia_motivo : ""),
+      };
+      itens.push(it);
+      marcadores.set(it.id, mapa.marcador(it));
+    });
+    mapa.ajustar(dados.local.bbox);
+    status.textContent = `${dados.candidatas.length} locais prováveis perto de ${dados.local.nome.split(",")[0]}` +
+      (dados.ia ? " (conferidos por IA)." : " (sem conferência por IA).") + " Busca salva.";
+    render();
+  }
+
+  async function carregarHistorico() {
+    const ul = document.getElementById("historico");
+    try {
+      const h = await fetch("/api/historico").then(r => r.json());
+      ul.innerHTML = "";
+      h.forEach(b => {
+        const li = document.createElement("li");
+        li.textContent = `${b.consulta} · ${b.total} locais · ${new Date(b.criado_em * 1000).toLocaleString("pt-BR")}`;
+        li.onclick = async () => mostrarResultado(await fetch("/api/historico/" + b.id).then(r => r.json()));
+        ul.appendChild(li);
+      });
+    } catch (_) { /* servidor sem histórico (modo só-mapa) */ }
+  }
+  carregarHistorico();
+
   document.getElementById("form-cidade").onsubmit = async e => {
     e.preventDefault();
     const cidade = document.getElementById("cidade").value;
@@ -49,22 +83,8 @@
       const r = await fetch("/api/buscar?cidade=" + encodeURIComponent(cidade));
       const dados = await r.json();
       if (!r.ok) throw new Error(dados.erro || "Erro " + r.status);
-      itens.filter(i => i.tipo === "candidata").forEach(i => mapa.remover(marcadores.get(i.id)));
-      itens = itens.filter(i => i.tipo !== "candidata");
-      dados.candidatas.forEach((c, i) => {
-        const it = {
-          id: "cand-" + i, nome: "Candidata #" + (i + 1), estado: "", tipo: "candidata",
-          lat: c.lat, lng: c.lng, altura_m: c.queda_m, probabilidade: c.probabilidade,
-          descricao: `Probabilidade ${c.probabilidade}%. Queda estimada ${c.queda_m} m, ` +
-            `área de drenagem ${c.area_km2} km².` + (c.ia_motivo ? " IA: " + c.ia_motivo : ""),
-        };
-        itens.push(it);
-        marcadores.set(it.id, mapa.marcador(it));
-      });
-      mapa.ajustar(dados.local.bbox);
-      status.textContent = `${dados.candidatas.length} locais prováveis perto de ${dados.local.nome.split(",")[0]}` +
-        (dados.ia ? " (conferidos por IA)." : " (sem conferência por IA).");
-      render();
+      mostrarResultado(dados);
+      carregarHistorico();
     } catch (err) {
       status.textContent = "Erro: " + err.message;
     } finally {

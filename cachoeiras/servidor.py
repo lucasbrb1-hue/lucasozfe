@@ -7,7 +7,9 @@
 import base64
 import json
 import os
+import sqlite3
 import sys
+import time
 
 import requests
 from flask import Flask, jsonify, request, send_from_directory
@@ -18,7 +20,26 @@ from detectar import detectar  # noqa: E402
 AQUI = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=None)
 UA = {"User-Agent": "rastreador-cachoeiras/0.1"}
+DB = os.environ.get("BUSCAS_DB", os.path.join(AQUI, "dados", "buscas.db"))
 MAX_GRAUS = 0.4  # limita o tamanho da área analisada
+
+
+def db():
+    os.makedirs(os.path.dirname(DB), exist_ok=True)
+    con = sqlite3.connect(DB)
+    con.execute("""CREATE TABLE IF NOT EXISTS buscas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, consulta TEXT, cidade TEXT,
+        criado_em REAL, ia INTEGER, resultado TEXT)""")
+    return con
+
+
+def salvar_busca(consulta, resultado):
+    with db() as con:
+        cur = con.execute(
+            "INSERT INTO buscas (consulta, cidade, criado_em, ia, resultado) VALUES (?,?,?,?,?)",
+            (consulta, resultado["local"]["nome"], time.time(), int(resultado["ia"]),
+             json.dumps(resultado, ensure_ascii=False)))
+        return cur.lastrowid
 
 
 def geocodificar(cidade):
@@ -92,7 +113,30 @@ def buscar():
         return jsonify(erro=f"Falha no Earth Engine: {e}"), 502
     pontos = pontos[:50]
     conferir_com_ia(pontos)
-    return jsonify(local=local, ia=bool(os.environ.get("ANTHROPIC_API_KEY")), candidatas=pontos)
+    resultado = {"local": local, "ia": bool(os.environ.get("ANTHROPIC_API_KEY")), "candidatas": pontos}
+    resultado["id"] = salvar_busca(cidade, resultado)
+    return jsonify(resultado)
+
+
+@app.get("/api/historico")
+def historico():
+    with db() as con:
+        linhas = con.execute(
+            "SELECT id, consulta, cidade, criado_em, ia, json_array_length(resultado, '$.candidatas') "
+            "FROM buscas ORDER BY id DESC LIMIT 100").fetchall()
+    return jsonify([{"id": i, "consulta": q, "cidade": c, "criado_em": t, "ia": bool(ia), "total": n}
+                    for i, q, c, t, ia, n in linhas])
+
+
+@app.get("/api/historico/<int:busca_id>")
+def historico_item(busca_id):
+    with db() as con:
+        linha = con.execute("SELECT resultado FROM buscas WHERE id=?", (busca_id,)).fetchone()
+    if not linha:
+        return jsonify(erro="Busca não encontrada."), 404
+    resultado = json.loads(linha[0])
+    resultado["id"] = busca_id
+    return jsonify(resultado)
 
 
 @app.get("/")
@@ -102,7 +146,7 @@ def raiz():
 
 @app.get("/<path:arq>")
 def estatico(arq):
-    if arq in ("servidor.py",) or arq.startswith("detector"):
+    if arq in ("servidor.py",) or arq.startswith(("detector", "dados")):
         return "", 404
     return send_from_directory(AQUI, arq)
 
