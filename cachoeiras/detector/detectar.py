@@ -10,6 +10,7 @@ Uso:
 """
 import argparse
 import json
+import math
 
 import ee
 
@@ -37,7 +38,20 @@ def detectar(bbox, projeto, min_area, queda, limite):
             "lat": round(lat, 5), "lng": round(lng, 5),
             "queda_m": round(p["queda_m"]), "area_km2": round(p["area_km2"], 1),
         })
-    return deduplicar(saida)
+    saida = deduplicar(saida)
+    for p in saida:
+        p["probabilidade"] = pontuar(p)
+    return sorted(saida, key=lambda p: -p["probabilidade"])
+
+
+def pontuar(p):
+    """Probabilidade heurística (0-100) de ser cachoeira real.
+
+    Mais queda e mais água (área de drenagem) => mais provável.
+    """
+    f_queda = min(p["queda_m"] / 80.0, 1.0)
+    f_agua = min(max(math.log10(max(p["area_km2"], 1.0) / 10.0), 0.0) / 2.0, 1.0)
+    return round(100 * (0.6 * f_queda + 0.4 * f_agua))
 
 
 def deduplicar(pontos, grau=0.003):

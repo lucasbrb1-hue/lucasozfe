@@ -12,3 +12,9 @@ li small { color:#9db5a9; display:block; }
 li.cand { border-left:3px solid var(--cand); }
 .nota { font-size:.75rem; color:#9db5a9; }
 @media (max-width:700px) { body { flex-direction:column-reverse; } #painel { width:100%; height:40vh; } }
+
+form { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+form input { padding:8px; border-radius:6px; border:0; }
+button { padding:8px; border:0; border-radius:6px; background:var(--acc); color:#06231f; font-weight:600; cursor:pointer; }
+button:disabled { opacity:.6; cursor:wait; }
+.prob { float:right; font-weight:700; color:var(--cand); }

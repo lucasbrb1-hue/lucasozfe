@@ -2,24 +2,25 @@
 
 Mapa de satélite com catálogo de cachoeiras e detecção de candidatas via Google Earth Engine.
 
-## Rodar o mapa
+## Como usar (cidade -> locais prováveis)
 ```bash
 cd cachoeiras
-cp config.example.js config.js   # opcional: coloque sua GOOGLE_MAPS_API_KEY
-python3 -m http.server 8000      # abra http://localhost:8000
-```
-Sem chave, usa imagens de satélite Esri. Com chave (Maps JavaScript API habilitada), usa Google Maps híbrido.
-
-## Detectar novas cachoeiras
-```bash
-cd cachoeiras/detector
 pip install -r requirements.txt
+pip install -r detector/requirements.txt
 earthengine authenticate
-python detectar.py --bbox -52 -29 -51 -28 --projeto SEU_PROJETO_GCP
+export EE_PROJECT=seu-projeto-gcp        # projeto Google Cloud com Earth Engine
+export ANTHROPIC_API_KEY=...             # opcional: IA confere a imagem de satélite
+cp config.example.js config.js           # opcional: GOOGLE_MAPS_API_KEY
+python servidor.py                       # abra http://localhost:8000
 ```
-Gera `data/candidatas.json` (laranja no mapa). O método combina rios (MERIT Hydro) com
-desnível de terreno (SRTM 30 m): são **candidatas**, precisam de conferência visual
-(inclui corredeiras, barragens e vertedouros).
+Digite uma cidade: o servidor define uma área ao redor (até ~0,4°), roda o Earth Engine
+(rios MERIT Hydro + desnível SRTM) e devolve até 50 pontos com **probabilidade**.
+Nota base = mais queda e mais água => mais provável. Com `ANTHROPIC_API_KEY`, os 10 melhores
+têm a imagem de satélite avaliada por um modelo de visão e a nota final é a média das duas.
+São candidatas: confirme visualmente (barragens e corredeiras podem passar).
+
+## Só o mapa (sem busca)
+`python3 -m http.server 8000` dentro de `cachoeiras/` mostra apenas o catálogo.
 
 ## Catálogo
 Edite `data/cachoeiras.json` (id, nome, lat, lng, estado, altura_m, descricao).

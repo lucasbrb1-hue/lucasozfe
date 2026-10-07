@@ -10,7 +10,12 @@
 <body>
   <aside id="painel">
     <h1>Rastreador de Cachoeiras</h1>
-    <input id="busca" type="search" placeholder="Buscar por nome ou estado">
+    <form id="form-cidade">
+      <input id="cidade" type="text" placeholder="Digite uma cidade (ex.: Bento Gonçalves, RS)" required>
+      <button id="btn-buscar">Procurar cachoeiras</button>
+    </form>
+    <p id="status" class="nota"></p>
+    <input id="busca" type="search" placeholder="Filtrar lista">
     <label><input id="ver-candidatas" type="checkbox" checked> Mostrar candidatas detectadas</label>
     <ul id="lista"></ul>
     <p id="fonte-mapa" class="nota"></p>
