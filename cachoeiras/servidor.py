@@ -152,4 +152,5 @@ def estatico(arq):
 
 
 if __name__ == "__main__":
-    app.run(port=8000)
+    # HOST=0.0.0.0 libera acesso por outros aparelhos da mesma rede (ex.: celular).
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))

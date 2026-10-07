@@ -26,3 +26,11 @@ São candidatas: confirme visualmente (barragens e corredeiras podem passar).
 ## Catálogo
 Edite `data/cachoeiras.json` (id, nome, lat, lng, estado, altura_m, descricao).
 Alturas e coordenadas dos exemplos são aproximadas: confira antes de usar.
+
+## Usar no celular (mesma rede Wi-Fi)
+```bash
+HOST=0.0.0.0 python servidor.py
+```
+Descubra o IP do computador (`ipconfig` no Windows, `ifconfig`/`ip a` no Mac/Linux, ex.: 192.168.0.15)
+e abra `http://192.168.0.15:8000` no navegador do celular. Use só em rede de confiança:
+o servidor não tem login e consome sua cota do Earth Engine e da IA.
