@@ -1,0 +1,7 @@
+[
+  {"id": "cataratas-iguacu", "nome": "Cataratas do Iguaçu", "lat": -25.6953, "lng": -54.4367, "estado": "PR", "altura_m": 82, "descricao": "Conjunto de 275 quedas no Rio Iguaçu, na fronteira com a Argentina."},
+  {"id": "salto-ventoso", "nome": "Salto Ventoso", "lat": -28.0833, "lng": -51.8167, "estado": "RS", "altura_m": 100, "descricao": "Queda no Rio Forqueta, região de Farroupilha."},
+  {"id": "cachoeira-do-tabuleiro", "nome": "Cachoeira do Tabuleiro", "lat": -18.9928, "lng": -43.5792, "estado": "MG", "altura_m": 273, "descricao": "Terceira maior queda do Brasil, na Serra do Espinhaço."},
+  {"id": "cachoeira-da-fumaca", "nome": "Cachoeira da Fumaça", "lat": -12.6075, "lng": -41.4617, "estado": "BA", "altura_m": 340, "descricao": "Chapada Diamantina, uma das mais altas do país."},
+  {"id": "veu-da-noiva-go", "nome": "Cachoeira Véu da Noiva", "lat": -15.7425, "lng": -47.6339, "estado": "GO", "altura_m": 80, "descricao": "Chapada dos Veadeiros."}
+]

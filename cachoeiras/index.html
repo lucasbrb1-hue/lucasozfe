@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rastreador de Cachoeiras</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="painel">
+    <h1>Rastreador de Cachoeiras</h1>
+    <input id="busca" type="search" placeholder="Buscar por nome ou estado">
+    <label><input id="ver-candidatas" type="checkbox" checked> Mostrar candidatas detectadas</label>
+    <ul id="lista"></ul>
+    <p id="fonte-mapa" class="nota"></p>
+  </aside>
+  <main id="mapa"></main>
+  <script src="config.js" onerror="window.CONFIG=window.CONFIG||{}"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
