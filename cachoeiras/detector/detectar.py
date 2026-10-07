@@ -11,12 +11,20 @@ Uso:
 import argparse
 import json
 import math
+import os
 
 import ee
 
 
 def detectar(bbox, projeto, min_area, queda, limite):
-    ee.Initialize(project=projeto)
+    if os.environ.get("EE_USE_ADC"):  # nuvem: usa a conta de serviço do ambiente
+        import google.auth
+        cred, _ = google.auth.default(scopes=[
+            "https://www.googleapis.com/auth/earthengine",
+            "https://www.googleapis.com/auth/cloud-platform"])
+        ee.Initialize(cred, project=projeto)
+    else:
+        ee.Initialize(project=projeto)
     regiao = ee.Geometry.Rectangle(bbox)
     elev = ee.Image("USGS/SRTMGL1_003").select("elevation")
     upa = ee.Image("MERIT/Hydro/v1_0_1").select("upa")

@@ -5,6 +5,7 @@
   python servidor.py                     # http://localhost:8000
 """
 import base64
+import hmac
 import json
 import os
 import sqlite3
@@ -12,7 +13,7 @@ import sys
 import time
 
 import requests
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "detector"))
 from detectar import detectar  # noqa: E402
@@ -33,13 +34,59 @@ def db():
     return con
 
 
+def _firestore():
+    from google.cloud import firestore
+    return firestore.Client().collection("buscas")
+
+
 def salvar_busca(consulta, resultado):
+    """SQLite local por padrão; Firestore se FIRESTORE=1 (nuvem, disco efêmero)."""
+    if os.environ.get("FIRESTORE"):
+        _, ref = _firestore().add({
+            "consulta": consulta, "cidade": resultado["local"]["nome"], "criado_em": time.time(),
+            "ia": resultado["ia"], "total": len(resultado["candidatas"]),
+            "resultado": json.dumps(resultado, ensure_ascii=False)})
+        return ref.id
     with db() as con:
         cur = con.execute(
             "INSERT INTO buscas (consulta, cidade, criado_em, ia, resultado) VALUES (?,?,?,?,?)",
             (consulta, resultado["local"]["nome"], time.time(), int(resultado["ia"]),
              json.dumps(resultado, ensure_ascii=False)))
         return cur.lastrowid
+
+
+def listar_buscas():
+    if os.environ.get("FIRESTORE"):
+        docs = _firestore().order_by("criado_em", direction="DESCENDING").limit(100).stream()
+        return [{"id": d.id, **{k: d.get(k) for k in ("consulta", "cidade", "criado_em", "ia", "total")}}
+                for d in docs]
+    with db() as con:
+        linhas = con.execute(
+            "SELECT id, consulta, cidade, criado_em, ia, json_array_length(resultado, '$.candidatas') "
+            "FROM buscas ORDER BY id DESC LIMIT 100").fetchall()
+    return [{"id": i, "consulta": q, "cidade": c, "criado_em": t, "ia": bool(ia), "total": n}
+            for i, q, c, t, ia, n in linhas]
+
+
+def ler_busca(busca_id):
+    if os.environ.get("FIRESTORE"):
+        d = _firestore().document(str(busca_id)).get()
+        return json.loads(d.get("resultado")) if d.exists else None
+    with db() as con:
+        linha = con.execute("SELECT resultado FROM buscas WHERE id=?", (busca_id,)).fetchone()
+    return json.loads(linha[0]) if linha else None
+
+
+@app.before_request
+def exigir_senha():
+    """Se APP_PASSWORD estiver definida, exige senha (HTTP Basic; usuário livre)."""
+    senha = os.environ.get("APP_PASSWORD")
+    if not senha:
+        return None
+    a = request.authorization
+    if a and hmac.compare_digest((a.password or "").encode(), senha.encode()):
+        return None
+    return Response("Senha necessária.", 401, {"WWW-Authenticate": 'Basic realm="Cachoeiras"'})
 
 
 def geocodificar(cidade):
@@ -120,23 +167,30 @@ def buscar():
 
 @app.get("/api/historico")
 def historico():
-    with db() as con:
-        linhas = con.execute(
-            "SELECT id, consulta, cidade, criado_em, ia, json_array_length(resultado, '$.candidatas') "
-            "FROM buscas ORDER BY id DESC LIMIT 100").fetchall()
-    return jsonify([{"id": i, "consulta": q, "cidade": c, "criado_em": t, "ia": bool(ia), "total": n}
-                    for i, q, c, t, ia, n in linhas])
+    return jsonify(listar_buscas())
 
 
-@app.get("/api/historico/<int:busca_id>")
+@app.get("/api/historico/<busca_id>")
 def historico_item(busca_id):
-    with db() as con:
-        linha = con.execute("SELECT resultado FROM buscas WHERE id=?", (busca_id,)).fetchone()
-    if not linha:
+    if not os.environ.get("FIRESTORE"):
+        if not busca_id.isdigit():
+            return jsonify(erro="Busca não encontrada."), 404
+        busca_id = int(busca_id)
+    resultado = ler_busca(busca_id)
+    if not resultado:
         return jsonify(erro="Busca não encontrada."), 404
-    resultado = json.loads(linha[0])
     resultado["id"] = busca_id
     return jsonify(resultado)
+
+
+@app.get("/config.js")
+def config_js():
+    """Na nuvem a chave do Google Maps vem da variável GOOGLE_MAPS_API_KEY."""
+    chave = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if chave is None and os.path.exists(os.path.join(AQUI, "config.js")):
+        return send_from_directory(AQUI, "config.js")
+    corpo = "window.CONFIG = %s;" % json.dumps({"GOOGLE_MAPS_API_KEY": chave or ""})
+    return Response(corpo, mimetype="application/javascript")
 
 
 @app.get("/")

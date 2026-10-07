@@ -27,6 +27,8 @@ São candidatas: confirme visualmente (barragens e corredeiras podem passar).
 Edite `data/cachoeiras.json` (id, nome, lat, lng, estado, altura_m, descricao).
 Alturas e coordenadas dos exemplos são aproximadas: confira antes de usar.
 
+Para publicar na nuvem e usar no celular de qualquer lugar, veja `DEPLOY.md`.
+
 ## Usar no celular (mesma rede Wi-Fi)
 ```bash
 HOST=0.0.0.0 python servidor.py
