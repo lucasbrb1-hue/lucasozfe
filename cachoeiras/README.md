@@ -2,6 +2,10 @@
 
 Mapa de satélite com catálogo de cachoeiras e detecção de candidatas via Google Earth Engine.
 
+## Versão gratuita no Colab (celular, sem servidor)
+Abra `colab/rastreador_cachoeiras.ipynb` no Google Colab: https://colab.research.google.com/github/lucasbrb1-hue/lucasozfe/blob/claude/rastreador-cachoeiras/cachoeiras/colab/rastreador_cachoeiras.ipynb
+Guarda as buscas no seu Google Drive (`cachoeiras/buscas.json`).
+
 ## Como usar (cidade -> locais prováveis)
 ```bash
 cd cachoeiras
