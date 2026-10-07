@@ -1,5 +1,7 @@
 # Publicar na nuvem (Google Cloud Run) e usar no celular de qualquer lugar
 
+**Atalho:** no Cloud Shell, rode `./deploy.sh` (faz tudo abaixo).
+
 Pré-requisitos: projeto Google Cloud com faturamento, `gcloud` instalado e logado, Earth Engine
 registrado no projeto (https://code.earthengine.google.com/register).
 
