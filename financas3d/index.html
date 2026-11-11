@@ -95,6 +95,13 @@ button { cursor: pointer; }
 .btn.primario:hover { filter: brightness(1.08); background: var(--accent); }
 .btn[aria-pressed]::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; border: 2px solid var(--muted); vertical-align: 1px; }
 .btn[aria-pressed="true"]::before { background: var(--ok); border-color: var(--ok); }
+.btn.ouro { border-color: var(--ouro); }
+.btn.ouro::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; background: var(--ouro); transform: rotate(45deg); }
+.aviso-plano { margin: 0; padding: 10px 12px; border-radius: 10px; font-weight: 600; background: color-mix(in srgb, var(--ouro) 20%, var(--surface)); }
+.precos { display: flex; flex-direction: column; gap: 8px; }
+.precos .btn small { display: block; font-weight: 500; opacity: .85; }
+.precos a.btn { text-align: center; text-decoration: none; color: var(--on-accent); }
+textarea { width: 100%; min-height: 110px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: 12px/1.4 ui-monospace, monospace; padding: 8px; }
 .btn.perigo { color: var(--crit); }
 .btn.bloco { width: 100%; }
 
@@ -256,6 +263,7 @@ input[type="number"] { width: 100%; min-width: 0; padding: 9px 10px; border-radi
     <div class="acoes">
       <button type="button" class="btn" id="papo" aria-pressed="true" title="Liga ou pausa as conversas entre os personagens">Conversas</button>
       <button type="button" class="btn" id="som" aria-pressed="true" title="Liga ou desliga os sons de alerta">Som</button>
+      <button type="button" class="btn ouro" id="plano">Seja Premium</button>
       <button type="button" class="btn primario" id="nova">+ Nova categoria</button>
     </div>
   </header>
@@ -432,6 +440,21 @@ function bonusDoDia() {
   if (ok) ganhar(5 * ok, `${ok} ${ok > 1 ? 'categorias' : 'categoria'} dentro do limite hoje`);
   if (ok === estado.categorias.length && ok >= 3) j.azul = true;
   fecharGanhos();
+}
+
+/* ---------- Assinatura: plano Grátis x Premium ---------- */
+// ATENÇÃO: aqui o plano fica guardado só no navegador. Para vender de verdade, `premium()` precisa
+// consultar um servidor que confirme o pagamento; do contrário qualquer pessoa libera o Premium sozinha.
+const PLANO = { mensal: 12.9, anual: 99.9, maxCategorias: 5 };
+const CHECKOUT = { mensal: '', anual: '' };   // links de pagamento (preencher quando a cobrança estiver conectada)
+const premium = () => estado.plano === 'premium';
+let motivoPlano = '';
+function abrirPlano(motivo) { motivoPlano = motivo || ''; selecionar('plano'); }
+const mesAnterior = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return dataISO(d).slice(0, 7); };
+function gastosCSV() {
+  const nomes = new Map(estado.categorias.map(c => [c.id, c.nome])), q = t => `"${String(t).replace(/"/g, '""')}"`;
+  return ['data;categoria;descricao;valor'].concat(estado.gastos.slice().sort((a, b) => a.data.localeCompare(b.data))
+    .map(g => [g.data, q(nomes.get(g.cat) || ''), q(g.desc || ''), g.valor.toFixed(2).replace('.', ',')].join(';'))).join('\n');
 }
 
 /* ---------- Chefão: a renda (dinheiro que entra) ---------- */
@@ -1177,6 +1200,7 @@ function atualizar() {
   const j = J(), nvA = nivelDe(j.xp), ini = NIVEIS[nvA - 1], fim = NIVEIS[nvA];
   const seqViva = j.ultimoDia === hoje() || j.ultimoDia === ontem() ? j.seq : 0;
   $('hud').innerHTML = `<b>Nível ${nvA}</b><span class="xpbar"><i style="width:${fim ? (j.xp - ini) / (fim - ini) * 100 : 100}%"></i></span><span class="seq num">${seqViva} ${seqViva === 1 ? 'dia seguido' : 'dias seguidos'}</span>`;
+  $('plano').textContent = premium() ? 'Premium ativo' : 'Seja Premium';
   $('exemplo').hidden = !estado.exemplo;
   $('som').setAttribute('aria-pressed', String(!!estado.som));
   $('papo').setAttribute('aria-pressed', String(estado.conversas !== false));
@@ -1200,7 +1224,36 @@ function desenharPainel(erro = '') {
   const idAntes = p.dataset.id;
   p.hidden = false; p.dataset.id = selecionada;
 
-  if (selecionada === 'chefe') {
+  if (selecionada === 'plano') {
+    const ativo = premium(), item = (nome, gratis) => `<li class="${ativo ? 'ok' : ''}"><div>${nome}<small>No Grátis: ${gratis}</small></div><span class="st">${ativo ? 'Liberado' : 'Premium'}</span></li>`;
+    const botao = (ciclo, titulo, sub) => CHECKOUT[ciclo]
+      ? `<a class="btn primario bloco" href="${CHECKOUT[ciclo]}" target="_blank" rel="noopener">${titulo}<small>${sub}</small></a>`
+      : `<button type="button" class="btn primario bloco" data-acao="assinar">${titulo}<small>${sub}</small></button>`;
+    p.innerHTML = `
+      <div class="cab"><i style="background:var(--ouro)"></i><h2>Plano Premium</h2><button type="button" class="fechar" data-acao="fechar" aria-label="Fechar">×</button></div>
+      <div class="corpo">
+        ${motivoPlano && !ativo ? `<p class="aviso-plano">${esc(motivoPlano)}</p>` : ''}
+        <div class="nivel-bloco"><strong>${ativo ? 'Premium ativo' : 'Você está no plano Grátis'}</strong>
+          <p>${ativo ? 'Obrigado por apoiar o jogo. Tudo abaixo está liberado.' : 'O essencial é grátis para sempre. O Premium é para quem quer ir além.'}</p></div>
+        <div><h3>O que o Premium libera</h3><ul class="jogo-lista">
+          ${item('Categorias ilimitadas', `até ${PLANO.maxCategorias} categorias`)}
+          ${item('Escolha do objeto de cada gasto', 'o formato vem do nome da categoria')}
+          ${item('Histórico completo', 'mês atual e mês anterior')}
+          ${item('Exportar gastos em CSV', 'não disponível')}
+        </ul></div>
+        <div><h3>Continua grátis</h3><p class="vazio">Lançar gastos, limites e alertas, personagens e conversas, Chefão, meta de economia, missões, níveis e recompensas.</p></div>
+        ${ativo ? `
+          <button type="button" class="btn bloco" data-acao="csv">Copiar gastos em CSV</button>
+          <textarea id="csv-saida" readonly hidden aria-label="Gastos em CSV"></textarea>
+          ${estado.planoTeste ? '<button type="button" class="btn bloco" data-acao="teste-premium">Desativar Premium de teste</button>' : ''}` : `
+          <div class="precos">
+            ${botao('anual', `Assinar anual · ${brl.format(PLANO.anual)}`, `Equivale a ${brl.format(PLANO.anual / 12)} por mês`)}
+            ${botao('mensal', `Assinar mensal · ${brl.format(PLANO.mensal)}`, 'Cancele quando quiser')}
+          </div>
+          ${CHECKOUT.anual || CHECKOUT.mensal ? '' : `<p class="vazio">A cobrança ainda não está conectada nesta versão.</p>
+          <button type="button" class="btn bloco" data-acao="teste-premium">Modo de teste: ativar Premium neste aparelho</button>`}`}
+      </div>`;
+  } else if (selecionada === 'chefe') {
     const ch = situacaoChefe(), extras = entradasDe(mes).sort((a, b) => b.data.localeCompare(a.data)), folga = ch.renda - ch.limites;
     const dataPadrao = mes === hoje().slice(0, 7) ? hoje() : mes + '-01';
     p.innerHTML = `
@@ -1294,7 +1347,7 @@ function desenharPainel(erro = '') {
       <div class="corpo"><form id="f-nova" novalidate>
         <label>Nome<input type="text" id="n-nome" maxlength="24" placeholder="Ex.: Educação" autocomplete="off"></label>
         <label>Limite mensal (R$)<input type="text" id="n-limite" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
-        <label>Formato<select id="n-forma"><option value="">Automático (pelo nome)</option>${Object.entries(FORMAS).map(([v, n]) => `<option value="${v}"${'' === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label>Formato${premium() ? '' : ' (escolha livre no Premium)'}<select id="n-forma"${premium() ? '' : ' disabled'}><option value="">Automático (pelo nome)</option>${Object.entries(FORMAS).map(([v, n]) => `<option value="${v}"${'' === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
         <label>Avisar ao chegar em <output id="n-alerta-v">80%</output><input type="range" id="n-alerta" min="50" max="100" step="5" value="80"></label>
         ${erro ? `<p class="erro">${esc(erro)}</p>` : ''}
         <button type="submit" class="btn primario bloco">Criar categoria</button>
@@ -1331,7 +1384,7 @@ function desenharPainel(erro = '') {
           <form id="f-config" novalidate>
             <label>Nome<input type="text" id="c-nome" maxlength="24" value="${esc(cat.nome)}" autocomplete="off"></label>
             <label>Limite mensal (R$)<input type="text" id="c-limite" inputmode="decimal" value="${cat.limite.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}" autocomplete="off"></label>
-            <label>Formato<select id="c-forma"><option value="">Automático (pelo nome)</option>${Object.entries(FORMAS).map(([v, n]) => `<option value="${v}"${cat.forma === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+            <label>Formato${premium() ? '' : ' (escolha livre no Premium)'}<select id="c-forma"${premium() ? '' : ' disabled'}><option value="">Automático (pelo nome)</option>${Object.entries(FORMAS).map(([v, n]) => `<option value="${v}"${cat.forma === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
             <label>Avisar ao chegar em <output id="c-alerta-v">${Math.round(cat.alerta * 100)}%</output><input type="range" id="c-alerta" min="50" max="100" step="5" value="${Math.round(cat.alerta * 100)}"></label>
             <button type="submit" class="btn bloco">Salvar</button>
             <button type="button" class="btn perigo bloco" data-acao="excluir">${confirmarExclusao ? 'Confirmar: excluir categoria e seus gastos' : 'Excluir categoria'}</button>
@@ -1351,6 +1404,16 @@ $('painel').addEventListener('click', ev => {
   const acao = b.dataset.acao;
   if (acao === 'fechar') selecionar(null);
   if (acao === 'remover') { estado.gastos = estado.gastos.filter(g => g.id !== b.dataset.id); salvar(); atualizar(); }
+  if (acao === 'assinar') aviso('A cobrança ainda não está conectada. Use o modo de teste para ver o Premium.', 'warn');
+  if (acao === 'teste-premium') {
+    const liga = !premium(); estado.plano = liga ? 'premium' : 'gratis'; estado.planoTeste = liga; motivoPlano = '';
+    salvar(); atualizar(); aviso(liga ? 'Premium de teste ativado neste aparelho.' : 'Premium de teste desativado.');
+  }
+  if (acao === 'csv') {
+    const txt = gastosCSV(), saida = $('csv-saida'); saida.value = txt; saida.hidden = false;
+    const selecionarTexto = () => { saida.focus(); saida.select(); aviso('Selecione e copie o texto abaixo.'); };
+    try { navigator.clipboard.writeText(txt).then(() => aviso('Gastos copiados em CSV. Cole em uma planilha.'), selecionarTexto); } catch (e) { selecionarTexto(); }
+  }
   if (acao === 'remover-entrada') { estado.entradas = (estado.entradas || []).filter(e => e.id !== b.dataset.id); salvar(); atualizar(); }
   if (acao === 'meta-concluir' || acao === 'meta-excluir') {
     if (acao === 'meta-excluir' && !confirmarExclusao) { confirmarExclusao = true; desenharPainel(); return; }
@@ -1415,31 +1478,34 @@ $('painel').addEventListener('submit', ev => {
     const cat = estado.categorias.find(c => c.id === selecionada);
     const nome = $('c-nome').value.trim(), limite = lerValor($('c-limite').value);
     if (!nome || !(limite > 0)) { aviso('Informe um nome e um limite maior que zero.', 'warn'); return; }
-    cat.nome = nome; cat.limite = limite; cat.alerta = Number($('c-alerta').value) / 100; cat.forma = $('c-forma').value || undefined;
+    cat.nome = nome; cat.limite = limite; cat.alerta = Number($('c-alerta').value) / 100; if (premium()) cat.forma = $('c-forma').value || undefined;
     salvar(); montarCena(); focar(); aviso('Limite salvo.');
   }
   if (f === 'f-nova') {
+    if (!premium() && estado.categorias.length >= PLANO.maxCategorias) { abrirPlano(`O plano Grátis tem até ${PLANO.maxCategorias} categorias. No Premium elas são ilimitadas.`); return; }
     const nome = $('n-nome').value.trim(), limite = lerValor($('n-limite').value);
     if (!nome) { desenharPainel('Dê um nome à categoria.'); $('n-nome').focus(); return; }
     if (!(limite > 0)) { desenharPainel('Informe um limite maior que zero, por exemplo 500,00.'); $('n-limite').focus(); return; }
     const usadas = new Set(estado.categorias.map(c => c.cor));
-    const cat = { id: novoId(), nome, limite, alerta: Number($('n-alerta').value) / 100, forma: $('n-forma').value || undefined, cor: CORES.find(c => !usadas.has(c)) || CORES[estado.categorias.length % CORES.length] };
+    const cat = { id: novoId(), nome, limite, alerta: Number($('n-alerta').value) / 100, forma: premium() ? $('n-forma').value || undefined : undefined, cor: CORES.find(c => !usadas.has(c)) || CORES[estado.categorias.length % CORES.length] };
     estado.categorias.push(cat); salvar();
     selecionada = cat.id; $('painel').dataset.id = ''; J().criadas++; montarCena(); focar(); fecharGanhos();
   }
 });
 
 function mudarMes(d) {
-  const [a, m] = mes.split('-').map(Number), n = new Date(a, m - 1 + d, 1);
-  mes = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; atualizar();
+  const [a, m] = mes.split('-').map(Number), n = new Date(a, m - 1 + d, 1), novo = dataISO(n).slice(0, 7);
+  if (!premium() && novo < mesAnterior()) { abrirPlano('O plano Grátis mostra o mês atual e o anterior. O Premium abre o histórico completo.'); return; }
+  mes = novo; atualizar();
 }
 $('mes-ant').onclick = () => mudarMes(-1);
 $('mes-prox').onclick = () => mudarMes(1);
-$('nova').onclick = () => selecionar('nova');
+$('nova').onclick = () => !premium() && estado.categorias.length >= PLANO.maxCategorias ? abrirPlano(`O plano Grátis tem até ${PLANO.maxCategorias} categorias. No Premium elas são ilimitadas.`) : selecionar('nova');
+$('plano').onclick = () => selecionada === 'plano' ? selecionar(null) : abrirPlano('');
 $('hud').onclick = () => selecionar(selecionada === 'jogo' ? null : 'jogo');
 $('som').onclick = () => { estado.som = !estado.som; salvar(); atualizar(); if (estado.som) bip('warn'); };
 $('papo').onclick = () => { estado.conversas = estado.conversas === false; salvar(); if (estado.conversas === false) cancelarCena(); else proximaCena = agoraS + 1; atualizar(); };
-$('zerar').onclick = () => { estado = { categorias: [], gastos: [], exemplo: false, som: estado.som, conversas: estado.conversas, jogo: estado.jogo }; salvar(); selecionada = 'nova'; montarCena(); focar(); };
+$('zerar').onclick = () => { estado = { categorias: [], gastos: [], exemplo: false, som: estado.som, conversas: estado.conversas, jogo: estado.jogo, plano: estado.plano }; salvar(); selecionada = 'nova'; montarCena(); focar(); };
 window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && selecionada) selecionar(null); });
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', aplicarTema);

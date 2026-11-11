@@ -29,6 +29,25 @@ Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 | Perto do limite (>= % de alerta) | anel âmbar pulsando, borda da tela âmbar, aviso e som |
 | Limite atingido ou estourado | objeto vermelho transbordando e tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
 
+## Assinatura (Grátis x Premium)
+
+| | Grátis | Premium |
+| --- | --- | --- |
+| Lançar gastos, limites, alertas, personagens, Chefão, meta, níveis | sim | sim |
+| Categorias | até 5 | ilimitadas |
+| Objeto de cada gasto | automático pelo nome | escolha livre |
+| Histórico | mês atual e anterior | completo |
+| Exportar gastos em CSV | não | sim |
+
+Preços configurados em `PLANO` no `index.html`: R$ 12,90 por mês ou R$ 99,90
+por ano.
+
+**A cobrança ainda não está conectada.** Nesta versão o plano fica gravado só
+no navegador, e a tela de planos oferece um "modo de teste" para ver o Premium.
+Para vender de verdade faltam: contas de usuário, um servidor que confirme o
+pagamento (é ele que deve responder se a pessoa é Premium) e um provedor de
+cobrança recorrente. Os links de pagamento entram em `CHECKOUT`.
+
 ## O Chefão: a renda
 
 O Chefão (de cartola, ao fundo da praça) é a fonte de entrada de dinheiro.
