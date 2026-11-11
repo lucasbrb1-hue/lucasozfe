@@ -162,6 +162,30 @@ details form { padding-top: 8px; }
 .toast button { margin-left: auto; border: 0; background: transparent; color: inherit; font-size: 18px; line-height: 1; padding: 0 2px; }
 @keyframes entra { from { transform: translateY(-8px); opacity: 0; } }
 
+/* Jogo: nível, XP, missões e recompensas */
+.hud { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 14px 5px 6px; font-weight: 600; }
+.hud:hover { background: var(--surface-2); }
+.hud b { background: var(--accent); color: var(--on-accent); border-radius: 999px; padding: 3px 10px; font: 700 13px var(--display); white-space: nowrap; }
+.hud.pulo { animation: pulo .5s ease-out; }
+@keyframes pulo { 40% { transform: scale(1.12); } }
+.xpbar { display: block; width: 84px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.xpbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .6s; }
+.hud span.seq { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.nivel-bloco { border-radius: 12px; padding: 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+.nivel-bloco strong { font: 700 22px/1.1 var(--display); }
+.nivel-bloco .xpbar { width: 100%; height: 10px; }
+.nivel-bloco p { margin: 0; color: var(--muted); }
+.nivel-bloco p b { color: var(--fg); }
+.jogo-lista { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; }
+.jogo-lista li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.jogo-lista li > div { min-width: 0; }
+.jogo-lista small { display: block; color: var(--muted); font-size: 12px; }
+.jogo-lista .st { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.jogo-lista li.ok .st { color: var(--ok); }
+.jogo-lista li.falta { color: var(--muted); }
+.toast.xp { border-color: var(--accent); }
+.toast.nivel { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 16px; }
+
 /* Balões de fala dos personagens */
 #baloes { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
 .balao {
@@ -188,11 +212,13 @@ details form { padding-top: 8px; }
   #painel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 50%; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
   #toasts { top: calc(8px + env(safe-area-inset-top, 0px)); }
   .chips:empty { display: none; }
+  .painel-aberto .hud { display: none; }
   .dica { display: none; }
   .painel-aberto .rodape { display: none; }
   .painel-aberto .total, .painel-aberto .chips, .painel-aberto .acoes { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .hud.pulo { animation: none; }
   #vinheta.crit { animation: none; }
   .toast { animation: none; }
 }
@@ -213,6 +239,7 @@ details form { padding-top: 8px; }
     </div>
     <div class="total"><small>Gasto no mês</small><strong class="num" id="total"></strong></div>
     <div class="chips" id="chips"></div>
+    <button type="button" class="hud" id="hud" title="Ver nível, missões e recompensas"></button>
     <div class="acoes">
       <button type="button" class="btn" id="papo" aria-pressed="true" title="Liga ou pausa as conversas entre os personagens">Conversas</button>
       <button type="button" class="btn" id="som" aria-pressed="true" title="Liga ou desliga os sons de alerta">Som</button>
@@ -228,7 +255,7 @@ details form { padding-top: 8px; }
       <span>Estes são dados de exemplo.</span>
       <button type="button" class="btn" id="zerar">Começar do zero</button>
     </div>
-    <p class="dica">Arraste para girar · role para aproximar · clique em um objeto para lançar um gasto · os personagens conversam sozinhos</p>
+    <p class="dica">Arraste para girar · role para aproximar · clique em um objeto para lançar um gasto · lançar gastos dá XP e libera recompensas</p>
   </div>
 </div>
 
@@ -296,13 +323,97 @@ function lerValor(txt) {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 }
 
+/* ---------- Jogo: XP, níveis, sequência, missões e conquistas ---------- */
+const NIVEIS = [0, 100, 250, 450, 700, 1000, 1400];   // XP mínimo de cada nível (1 a 7)
+const TITULOS = ['Iniciante', 'Anotador', 'Organizado', 'Poupador', 'Estrategista', 'Mestre do orçamento', 'Lenda'];
+const PREMIOS = { 2: 'Bonés para os personagens', 3: 'Árvores na praça', 4: 'Troféu de bronze no centro da praça', 5: 'Coroas douradas para os personagens', 6: 'Troféu de ouro', 7: 'Fogos de artifício sobre a praça' };
+const CONQUISTAS = [
+  ['primeiro', 'Primeiro passo', 'Lance seu primeiro gasto', j => j.lancados >= 1],
+  ['dez', 'Caderno em dia', 'Lance 10 gastos', j => j.lancados >= 10],
+  ['cinquenta', 'Contador', 'Lance 50 gastos', j => j.lancados >= 50],
+  ['seq3', 'Pegando o ritmo', 'Lance gastos 3 dias seguidos', j => j.melhorSeq >= 3],
+  ['seq7', 'Semana perfeita', 'Lance gastos 7 dias seguidos', j => j.melhorSeq >= 7],
+  ['seq30', 'Hábito formado', 'Lance gastos 30 dias seguidos', j => j.melhorSeq >= 30],
+  ['paz', 'Pacificador', 'Aceite uma ajuda entre categorias', j => j.ajudas >= 1],
+  ['azul', 'Tudo no azul', 'Comece o dia com todas as categorias dentro do limite', j => !!j.azul],
+  ['arquiteto', 'Arquiteto', 'Crie uma categoria', j => j.criadas >= 1],
+];
+const dataISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const ontem = () => { const d = new Date(); d.setDate(d.getDate() - 1); return dataISO(d); };
+const semanaDe = dia => { const d = new Date(dia + 'T12:00:00'); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return dataISO(d); };
+const nivelDe = xp => NIVEIS.filter(v => xp >= v).length;
+function J() {
+  const j = estado.jogo || (estado.jogo = {});
+  for (const k of ['xp', 'seq', 'melhorSeq', 'lancados', 'ajudas', 'criadas']) j[k] = j[k] || 0;
+  j.nivel = j.nivel || 1; j.missoes = j.missoes || {}; j.conquistas = j.conquistas || {};
+  return j;
+}
+// Missões se renovam todo dia / toda semana e são medidas pelos gastos realmente lançados.
+function missoes() {
+  const h = hoje(), sem = semanaDe(h), meus = estado.gastos.filter(g => g.criado), deHoje = meus.filter(g => g.criado === h);
+  const dias = new Set(meus.filter(g => semanaDe(g.criado) === sem).map(g => g.criado)).size;
+  return [
+    { id: 'd1:' + h, nome: 'Lance um gasto hoje', feito: Math.min(1, deHoje.length), meta: 1, xp: 15 },
+    { id: 'd2:' + h, nome: 'Lance gastos em 2 categorias diferentes hoje', feito: Math.min(2, new Set(deHoje.map(g => g.cat)).size), meta: 2, xp: 20 },
+    { id: 's1:' + sem, nome: 'Lance gastos em 4 dias desta semana', feito: Math.min(4, dias), meta: 4, xp: 50 },
+  ];
+}
+let ganhos = [];
+function ganhar(xp, motivo) { J().xp += xp; ganhos.push([xp, motivo]); }
+function conferirJogo() {
+  const j = J(), atuais = missoes();
+  for (const m of atuais) if (m.feito >= m.meta && !j.missoes[m.id]) { j.missoes[m.id] = true; ganhar(m.xp, `missão "${m.nome}"`); }
+  for (const k of Object.keys(j.missoes)) if (!atuais.some(m => m.id === k)) delete j.missoes[k];
+  for (const [id, nome, , teste] of CONQUISTAS) if (!j.conquistas[id] && teste(j)) { j.conquistas[id] = true; ganhar(30, `conquista "${nome}"`); }
+}
+function fecharGanhos() {
+  conferirJogo();
+  const j = J();
+  if (ganhos.length) {
+    aviso(`+${ganhos.reduce((t, g) => t + g[0], 0)} XP · ${ganhos.map(g => g[1]).join(', ')}`, 'xp');
+    ganhos = [];
+    $('hud').classList.remove('pulo'); void $('hud').offsetWidth; $('hud').classList.add('pulo');
+  }
+  const nv = nivelDe(j.xp);
+  if (nv > j.nivel) {
+    for (let n = j.nivel + 1; n <= nv; n++) aviso(`Nível ${n}: ${TITULOS[n - 1]}! Recompensa liberada: ${PREMIOS[n]}.`, 'nivel');
+    j.nivel = nv; salvar(); montarCena(); focar();
+    estourar(orbita.alvoDesejado.x, 2.5, orbita.alvoDesejado.z); bip('nivel');
+  }
+  salvar(); atualizar();
+}
+// Chamado a cada gasto lançado: XP (até 5 gastos por dia), sequência de dias e bônus do primeiro do dia.
+function pontuarGasto() {
+  const j = J(), h = hoje();
+  j.lancados++;
+  if (j.xpDia !== h) { j.xpDia = h; j.nDia = 0; }
+  if (j.nDia < 5) { j.nDia++; ganhar(10, 'gasto lançado'); }
+  if (j.ultimoDia !== h) {
+    j.seq = j.ultimoDia === ontem() ? j.seq + 1 : 1; j.ultimoDia = h; j.melhorSeq = Math.max(j.melhorSeq, j.seq);
+    ganhar(15, 'primeiro gasto do dia');
+    if (j.seq > 1) ganhar(Math.min(50, j.seq * 5), `${j.seq} dias seguidos`);
+  }
+  fecharGanhos();
+}
+// Uma vez por dia, ao abrir: bônus por cada categoria dentro do limite (não vale para os dados de exemplo).
+function bonusDoDia() {
+  const j = J(), h = hoje();
+  if (j.ultimoDia && j.ultimoDia < ontem()) j.seq = 0;
+  if (j.bonusDia === h || estado.exemplo || !estado.categorias.length) return;
+  j.bonusDia = h;
+  const ok = estado.categorias.filter(c => situacao(c).nivel === 'ok').length;
+  if (ok) ganhar(5 * ok, `${ok} ${ok > 1 ? 'categorias' : 'categoria'} dentro do limite hoje`);
+  if (ok === estado.categorias.length && ok >= 3) j.azul = true;
+  fecharGanhos();
+}
+
 /* ---------- Som e avisos ---------- */
 let audio = null;
 function bip(nivel) {
   if (!estado.som) return;
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-    const notas = nivel === 'crit' ? [880, 660, 880, 660] : [660, 784];
+    const notas = nivel === 'crit' ? [880, 660, 880, 660] : nivel === 'nivel' ? [523, 659, 784, 1047] : [660, 784];
     notas.forEach((f, i) => {
       const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * 0.16;
       o.type = nivel === 'crit' ? 'square' : 'sine'; o.frequency.value = f;
@@ -350,6 +461,40 @@ function aplicarTema() {
 }
 
 const tanques = new Map();   // id -> objetos 3D e estado da animação
+let decor = new THREE.Group();
+// Confete (subida de nível) e fogos (recompensa do nível 7)
+const N_CONF = 160, confVel = new Float32Array(N_CONF * 3);
+const confete = new THREE.Points(new THREE.BufferGeometry()
+  .setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_CONF * 3), 3))
+  .setAttribute('color', new THREE.BufferAttribute(new Float32Array(N_CONF * 3), 3)),
+  new THREE.PointsMaterial({ size: 0.24, vertexColors: true, transparent: true }));
+confete.visible = false; confete.frustumCulled = false; scene.add(confete);
+let confVida = 0, proximoFogo = 8;
+function estourar(x, y, z) {
+  const p = confete.geometry.attributes.position, c = confete.geometry.attributes.color, cor = new THREE.Color();
+  for (let i = 0; i < N_CONF; i++) {
+    const a = Math.random() * Math.PI * 2, e = Math.random() * Math.PI - Math.PI / 2, v = 3 + Math.random() * 5;
+    p.setXYZ(i, x, y, z);
+    confVel.set([Math.cos(a) * Math.cos(e) * v, Math.sin(e) * v + 4, Math.sin(a) * Math.cos(e) * v], i * 3);
+    cor.setHSL(Math.random(), 0.85, 0.58); c.setXYZ(i, cor.r, cor.g, cor.b);
+  }
+  p.needsUpdate = c.needsUpdate = true; confVida = 2.6; confete.visible = true;
+}
+function animarConfete(s, dt) {
+  if (confVida > 0) {
+    confVida -= dt;
+    const p = confete.geometry.attributes.position;
+    for (let i = 0; i < N_CONF; i++) {
+      confVel[i * 3 + 1] -= 9 * dt;
+      p.setXYZ(i, p.getX(i) + confVel[i * 3] * dt, Math.max(0.05, p.getY(i) + confVel[i * 3 + 1] * dt), p.getZ(i) + confVel[i * 3 + 2] * dt);
+    }
+    p.needsUpdate = true; confete.material.opacity = Math.min(1, Math.max(0, confVida));
+    if (confVida <= 0) confete.visible = false;
+  } else if (J().nivel >= 7 && s > proximoFogo && !reduzMovimento) {
+    proximoFogo = s + 5 + Math.random() * 4;
+    estourar((Math.random() - 0.5) * 14, 6 + Math.random() * 3, (Math.random() - 0.5) * 14);
+  }
+}
 const moedas = [];
 const reduzMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const N_GOTAS = 70;
@@ -359,6 +504,7 @@ function montarCena() {
   cancelarCena();
   tanques.forEach(t => { scene.remove(t.grupo); scene.remove(t.boneco); });
   tanques.clear();
+  const nv = nivelDe(J().xp); let maiorRad = 1;
   const n = estado.categorias.length, raio = n <= 1 ? 0 : Math.max(3.6, n * 1.1);
   const maior = Math.max(1, ...estado.categorias.map(c => c.limite));
   estado.categorias.forEach((cat, i) => {
@@ -373,6 +519,7 @@ function montarCena() {
     const cheio = construirForma(forma, matCheio, 0), fantasma = construirForma(forma, matFantasma, 1);
     const dim = new THREE.Box3().setFromObject(cheio).getSize(new THREE.Vector3());
     const h = dim.y * escala, rad = Math.max(dim.x, dim.z) / 2 * escala;
+    maiorRad = Math.max(maiorRad, rad);
     cheio.scale.setScalar(escala); fantasma.scale.setScalar(escala * 1.012);
     const modelo = new THREE.Group(); modelo.add(cheio, fantasma); modelo.position.y = 0.14;
     modelo.rotation.y = Math.atan2(Math.cos(ang), Math.sin(ang)) + 0.5;   // frente para fora da roda, levemente de lado
@@ -401,6 +548,21 @@ function montarCena() {
     tanques.set(cat.id, { cat, grupo, base, plano, matCheio, matFantasma, rad, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas, h, nivel: niveis.get(cat.id) || 0, boneco, casa, dest: casa.clone(), olhar: null,
       x: grupo.position.x, z: grupo.position.z, corBase: new THREE.Color(cat.cor), fase: Math.random() * 10 });
   });
+  // recompensas de nível que aparecem na praça
+  scene.remove(decor); decor = new THREE.Group(); scene.add(decor);
+  if (nv >= 3) for (let i = 0; i < 9; i++) {
+    const a = 0.3 + i / 9 * Math.PI * 2, R = raio + maiorRad + 3.2, arv = new THREE.Group();
+    const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.17, 0.7, 10), new THREE.MeshStandardMaterial({ color: 0x7a5a3c, roughness: 0.9 })); tronco.position.y = 0.35;
+    const copa = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 12), new THREE.MeshStandardMaterial({ color: 0x3f9a5a, roughness: 0.8 })); copa.position.y = 1.45;
+    arv.add(tronco, copa); arv.position.set(Math.cos(a) * R, 0, Math.sin(a) * R); arv.scale.setScalar(1 + 0.25 * Math.sin(i * 7)); decor.add(arv);
+  }
+  if (nv >= 4) {
+    const metal = new THREE.MeshStandardMaterial({ color: nv >= 6 ? 0xf7c62f : 0xc77b3a, emissive: nv >= 6 ? 0x6b4a00 : 0x4a2408, metalness: 0.25, roughness: 0.3 }), tr = new THREE.Group();
+    const P = (geo, y, m) => { const o = new THREE.Mesh(geo, m || metal); o.position.y = y; tr.add(o); return o; };
+    P(new THREE.BoxGeometry(0.7, 0.18, 0.7), 0.09, matDetalhe); P(new THREE.CylinderGeometry(0.08, 0.13, 0.4, 16), 0.38); P(new THREE.CylinderGeometry(0.38, 0.14, 0.5, 24), 0.83);
+    for (const x of [-0.42, 0.42]) P(new THREE.TorusGeometry(0.15, 0.035, 8, 20), 0.86).position.x = x;
+    tr.scale.setScalar(1.4); if (n <= 1) tr.position.set(maiorRad + 3, 0, 0); decor.add(tr);
+  }
   orbita.raioPadrao = raio * 2 + 10;
   aplicarTema();
   montarRotulos();
@@ -476,7 +638,19 @@ function criarBoneco(cat) {
     g.add(olho, pupila, sob); partes.sobr.push(sob);
   }
   partes.boca = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.024, 8, 16, Math.PI), matPreto); partes.boca.position.set(0, partes.bocaY, fb + 0.02);
-  g.add(partes.boca); g.userData = partes; return g;
+  g.add(partes.boca); g.userData = partes;
+  // acessório de recompensa: boné a partir do nível 2, coroa a partir do nível 5
+  const nv = nivelDe(J().xp), topo = dim.y * k, tz = tipo === 'carro' ? -0.08 * k : 0;
+  if (nv >= 5) {
+    const ouro = new THREE.MeshStandardMaterial({ color: 0xf7c62f, emissive: 0x6b4a00, metalness: 0.25, roughness: 0.3, side: THREE.DoubleSide });
+    const aro = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 0.13, 14, 1, true), ouro); aro.position.set(0, topo + 0.05, tz); g.add(aro);
+    for (let i = 0; i < 5; i++) { const pt = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.13, 6), ouro); pt.position.set(Math.cos(i * 1.257) * 0.185, topo + 0.17, tz + Math.sin(i * 1.257) * 0.185); g.add(pt); }
+  } else if (nv >= 2) {
+    const tecido = new THREE.MeshStandardMaterial({ color: 0x2456c8, roughness: 0.7 });
+    const copa = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), tecido); copa.position.set(0, topo - 0.03, tz); g.add(copa);
+    const aba = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.025, 16), tecido); aba.scale.z = 1.25; aba.position.set(0, topo - 0.01, tz + 0.17); g.add(aba);
+  }
+  return g;
 }
 const poeira = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(40 * 3), 3)),
   new THREE.PointsMaterial({ size: 0.22, transparent: true, opacity: 0.8, color: 0xaab3bd }));
@@ -585,8 +759,8 @@ function oferta(de, para, valor) {
   sim.onclick = () => {
     el.remove();
     if (!estado.categorias.includes(a) || !estado.categorias.includes(b) || a.limite - valor <= 0) return;
-    a.limite -= valor; b.limite += valor; salvar(); montarCena(); focar();
-    aviso(`${brl0.format(valor)} do limite de ${a.nome} passaram para ${b.nome}.`);
+    a.limite -= valor; b.limite += valor; J().ajudas++; ganhar(20, 'ajuda aceita'); salvar(); montarCena(); focar();
+    aviso(`${brl0.format(valor)} do limite de ${a.nome} passaram para ${b.nome}.`); fecharGanhos();
   };
   $('toasts').append(el); setTimeout(() => el.remove(), 20000);
 }
@@ -746,7 +920,7 @@ function quadro(agora) {
     const c = moedas[i]; c.v += 22 * dt; c.m.position.y -= c.v * dt; c.m.rotation.z += dt * 12;
     if (c.m.position.y <= c.chao) { scene.remove(c.m); moedas.splice(i, 1); }
   }
-  agoraS = s; tickCena(s); animarBonecos(s, dt, w, h);
+  agoraS = s; tickCena(s); animarBonecos(s, dt, w, h); animarConfete(s, dt);
   renderer.render(scene, camera);
   requestAnimationFrame(quadro);
 }
@@ -778,6 +952,9 @@ function atualizar() {
   if (!chips.length && tanques.size) chips.push('<span class="chip ok">Tudo dentro do limite</span>');
   $('chips').innerHTML = chips.join('');
   $('vinheta').className = cont.crit ? 'crit' : cont.warn ? 'warn' : '';
+  const j = J(), nvA = nivelDe(j.xp), ini = NIVEIS[nvA - 1], fim = NIVEIS[nvA];
+  const seqViva = j.ultimoDia === hoje() || j.ultimoDia === ontem() ? j.seq : 0;
+  $('hud').innerHTML = `<b>Nível ${nvA}</b><span class="xpbar"><i style="width:${fim ? (j.xp - ini) / (fim - ini) * 100 : 100}%"></i></span><span class="seq num">${seqViva} ${seqViva === 1 ? 'dia seguido' : 'dias seguidos'}</span>`;
   $('exemplo').hidden = !estado.exemplo;
   $('som').setAttribute('aria-pressed', String(!!estado.som));
   $('papo').setAttribute('aria-pressed', String(estado.conversas !== false));
@@ -801,7 +978,30 @@ function desenharPainel(erro = '') {
   const idAntes = p.dataset.id;
   p.hidden = false; p.dataset.id = selecionada;
 
-  if (selecionada === 'nova') {
+  if (selecionada === 'jogo') {
+    const j = J(), nv = nivelDe(j.xp), ini = NIVEIS[nv - 1], fim = NIVEIS[nv];
+    const seq = j.ultimoDia === hoje() || j.ultimoDia === ontem() ? j.seq : 0;
+    p.innerHTML = `
+      <div class="cab"><h2>Sua jornada</h2><button type="button" class="fechar" data-acao="fechar" aria-label="Fechar">×</button></div>
+      <div class="corpo">
+        <div class="nivel-bloco">
+          <strong>Nível ${nv} · ${TITULOS[nv - 1]}</strong>
+          <span class="xpbar"><i style="width:${fim ? (j.xp - ini) / (fim - ini) * 100 : 100}%"></i></span>
+          <p class="num">${fim ? `<b>${j.xp} XP</b> · faltam ${fim - j.xp} para o nível ${nv + 1}` : `<b>${j.xp} XP</b> · nível máximo`}</p>
+          ${fim ? `<p>Próxima recompensa: <b>${PREMIOS[nv + 1]}</b></p>` : ''}
+          <p><b>${seq} ${seq === 1 ? 'dia seguido' : 'dias seguidos'}</b> lançando gastos${j.melhorSeq ? ` (recorde: ${j.melhorSeq})` : ''}. ${j.ultimoDia === hoje() ? 'Hoje já está garantido.' : 'Lance um gasto hoje para ' + (seq ? 'manter a sequência.' : 'começar uma.')}</p>
+        </div>
+        <div><h3>Missões</h3><ul class="jogo-lista">${missoes().map(m => `<li class="${m.feito >= m.meta ? 'ok' : ''}"><div>${m.nome}<small>+${m.xp} XP</small></div><span class="st num">${m.feito >= m.meta ? 'Concluída' : `${m.feito} de ${m.meta}`}</span></li>`).join('')}</ul></div>
+        <div><h3>Recompensas</h3><ul class="jogo-lista">${Object.entries(PREMIOS).map(([n, nome]) => `<li class="${nv >= n ? 'ok' : 'falta'}"><div>${nome}<small>Nível ${n} · ${NIVEIS[n - 1]} XP</small></div><span class="st">${nv >= n ? 'Liberada' : 'Bloqueada'}</span></li>`).join('')}</ul></div>
+        <div><h3>Conquistas</h3><ul class="jogo-lista">${CONQUISTAS.map(([id, nome, desc]) => `<li class="${j.conquistas[id] ? 'ok' : 'falta'}"><div>${nome}<small>${desc}</small></div><span class="st">${j.conquistas[id] ? 'Conquistada' : '+30 XP'}</span></li>`).join('')}</ul></div>
+        <div><h3>Como ganhar XP</h3><ul class="jogo-lista">
+          <li><div>Lançar um gasto<small>Vale para os 5 primeiros de cada dia</small></div><span class="st">+10 XP</span></li>
+          <li><div>Primeiro gasto do dia<small>Mais um bônus que cresce com os dias seguidos</small></div><span class="st">+15 XP</span></li>
+          <li><div>Abrir o dia dentro do limite<small>Por categoria que não passou do ponto de alerta</small></div><span class="st">+5 XP</span></li>
+          <li><div>Aceitar a ajuda de uma categoria<small>Quando um personagem oferece parte do limite</small></div><span class="st">+20 XP</span></li>
+        </ul></div>
+      </div>`;
+  } else if (selecionada === 'nova') {
     p.innerHTML = `
       <div class="cab"><h2>Nova categoria</h2><button type="button" class="fechar" data-acao="fechar" aria-label="Fechar">×</button></div>
       <div class="corpo"><form id="f-nova" novalidate>
@@ -882,14 +1082,15 @@ $('painel').addEventListener('submit', ev => {
     const valor = lerValor($('g-valor').value), data = $('g-data').value || hoje();
     if (!(valor > 0)) { desenharPainel('Informe um valor maior que zero, por exemplo 45,90.'); $('g-valor').focus(); return; }
     const antes = situacao(cat).nivel;
-    estado.gastos.push({ id: novoId(), cat: cat.id, valor, desc: $('g-desc').value.trim(), data });
+    estado.gastos.push({ id: novoId(), cat: cat.id, valor, desc: $('g-desc').value.trim(), data, criado: hoje() });
     mes = data.slice(0, 7); salvar();
     $('g-valor').value = ''; $('g-desc').value = '';
     soltarMoeda(cat.id); atualizar(); $('g-valor').focus();
     const st = situacao(cat);
     if (st.nivel !== 'ok') { alunoForcado = cat.id; if (!cena) proximaCena = agoraS + 1.5; }
     if (st.nivel === 'crit') { aviso(`${cat.nome}: ${st.texto[0].toLowerCase() + st.texto.slice(1)}.`, 'crit'); bip('crit'); }
-    else if (st.nivel === 'warn' ) { aviso(`Atenção, ${cat.nome} chegou a ${Math.round(st.r * 100)}% do limite. Restam ${brl.format(cat.limite - st.gasto)}.`, 'warn'); if (antes !== 'warn') bip('warn'); }
+    else if (st.nivel === 'warn') { aviso(`Atenção, ${cat.nome} chegou a ${Math.round(st.r * 100)}% do limite. Restam ${brl.format(cat.limite - st.gasto)}.`, 'warn'); if (antes !== 'warn') bip('warn'); }
+    pontuarGasto();
   }
   if (f === 'f-config') {
     const cat = estado.categorias.find(c => c.id === selecionada);
@@ -905,7 +1106,7 @@ $('painel').addEventListener('submit', ev => {
     const usadas = new Set(estado.categorias.map(c => c.cor));
     const cat = { id: novoId(), nome, limite, alerta: Number($('n-alerta').value) / 100, forma: $('n-forma').value || undefined, cor: CORES.find(c => !usadas.has(c)) || CORES[estado.categorias.length % CORES.length] };
     estado.categorias.push(cat); salvar();
-    selecionada = cat.id; $('painel').dataset.id = ''; montarCena(); focar();
+    selecionada = cat.id; $('painel').dataset.id = ''; J().criadas++; montarCena(); focar(); fecharGanhos();
   }
 });
 
@@ -916,15 +1117,16 @@ function mudarMes(d) {
 $('mes-ant').onclick = () => mudarMes(-1);
 $('mes-prox').onclick = () => mudarMes(1);
 $('nova').onclick = () => selecionar('nova');
+$('hud').onclick = () => selecionar(selecionada === 'jogo' ? null : 'jogo');
 $('som').onclick = () => { estado.som = !estado.som; salvar(); atualizar(); if (estado.som) bip('warn'); };
 $('papo').onclick = () => { estado.conversas = estado.conversas === false; salvar(); if (estado.conversas === false) cancelarCena(); else proximaCena = agoraS + 1; atualizar(); };
-$('zerar').onclick = () => { estado = { categorias: [], gastos: [], exemplo: false, som: estado.som }; salvar(); selecionada = 'nova'; montarCena(); focar(); };
+$('zerar').onclick = () => { estado = { categorias: [], gastos: [], exemplo: false, som: estado.som, conversas: estado.conversas, jogo: estado.jogo }; salvar(); selecionada = 'nova'; montarCena(); focar(); };
 window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && selecionada) selecionar(null); });
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', aplicarTema);
 new MutationObserver(aplicarTema).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-redimensionar(); montarCena(); focar();
+redimensionar(); montarCena(); focar(); bonusDoDia();
 orbita.raio = orbita.raioAlvo * 1.25;
 requestAnimationFrame(quadro);
 })();

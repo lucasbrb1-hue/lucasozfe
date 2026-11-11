@@ -29,6 +29,33 @@ Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 | Perto do limite (>= % de alerta) | anel âmbar pulsando, borda da tela âmbar, aviso e som |
 | Limite atingido ou estourado | objeto vermelho transbordando e tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
 
+## O jogo
+
+Lançar gastos rende XP, e o XP sobe de nível. Cada nível libera uma recompensa
+que aparece na cena.
+
+| Como ganhar XP | Valor |
+| --- | --- |
+| Lançar um gasto (5 primeiros de cada dia) | +10 |
+| Primeiro gasto do dia | +15, mais um bônus que cresce com os dias seguidos |
+| Abrir o dia com categorias dentro do limite | +5 por categoria |
+| Aceitar a ajuda oferecida por um personagem | +20 |
+| Missões do dia e da semana | +15 a +50 |
+| Conquistas | +30 cada |
+
+| Nível | XP | Recompensa |
+| --- | --- | --- |
+| 2 Anotador | 100 | Bonés para os personagens |
+| 3 Organizado | 250 | Árvores na praça |
+| 4 Poupador | 450 | Troféu de bronze |
+| 5 Estrategista | 700 | Coroas douradas |
+| 6 Mestre do orçamento | 1000 | Troféu de ouro |
+| 7 Lenda | 1400 | Fogos de artifício |
+
+O botão de nível no topo abre "Sua jornada", com a sequência de dias, as
+missões, as recompensas e as conquistas. Os dados de exemplo não rendem o
+bônus diário.
+
 ## Personagens
 
 Cada categoria tem um personagem (uma miniatura do objeto, com rosto), com humor
