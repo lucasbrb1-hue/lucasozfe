@@ -92,6 +92,8 @@ button { cursor: pointer; }
 .btn:hover { background: var(--surface-2); }
 .btn.primario { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primario:hover { filter: brightness(1.08); background: var(--accent); }
+.btn[aria-pressed]::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; border: 2px solid var(--muted); vertical-align: 1px; }
+.btn[aria-pressed="true"]::before { background: var(--ok); border-color: var(--ok); }
 .btn.perigo { color: var(--crit); }
 .btn.bloco { width: 100%; }
 
@@ -112,7 +114,7 @@ button { cursor: pointer; }
 
 /* Painel da categoria */
 #painel {
-  position: absolute; top: 76px; bottom: 16px; right: max(16px, env(safe-area-inset-right, 0px)); width: 340px;
+  position: absolute; top: var(--topo-h, 76px); bottom: 16px; right: max(16px, env(safe-area-inset-right, 0px)); width: 340px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
   display: flex; flex-direction: column; overflow: hidden; z-index: 4;
 }
@@ -160,13 +162,29 @@ details form { padding-top: 8px; }
 .toast button { margin-left: auto; border: 0; background: transparent; color: inherit; font-size: 18px; line-height: 1; padding: 0 2px; }
 @keyframes entra { from { transform: translateY(-8px); opacity: 0; } }
 
+/* Balões de fala dos personagens */
+#baloes { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+.balao {
+  position: absolute; left: 0; top: 0; max-width: 230px; width: max-content; padding: 7px 11px; border-radius: 13px;
+  background: var(--surface); border: 2px solid var(--fg); font-weight: 600; font-size: 13px; line-height: 1.3; box-shadow: var(--shadow);
+}
+.balao::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 10px; height: 10px; margin-left: -5px; background: var(--surface); border: solid var(--fg); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.balao b { display: block; font: 700 11px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.balao.grito { background: var(--crit); border-color: var(--crit); color: #fff; font: 700 17px var(--display); }
+.balao.grito::after { background: var(--crit); border-color: var(--crit); }
+.toast.oferta { flex-wrap: wrap; align-items: center; }
+.toast.oferta span { flex: 1 1 100%; }
+.toast.oferta button { margin: 0; border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+.toast.oferta button.sim { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
 .rodape { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: 14px; z-index: 3; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; max-width: calc(100% - 32px); }
 .dica { color: var(--muted); font-size: 12.5px; margin: 0; }
 .exemplo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--surface); border: 1px dashed var(--muted); border-radius: 12px; padding: 8px 12px; font-size: 13px; }
 
 @media (max-width: 760px) {
   .marca { font-size: 17px; }
-  .acoes { margin-left: 0; }
+  .acoes { margin-left: 0; flex-wrap: wrap; }
+  .btn { white-space: nowrap; padding: 7px 10px; font-size: 13.5px; }
   #painel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 50%; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
   #toasts { top: calc(8px + env(safe-area-inset-top, 0px)); }
   .chips:empty { display: none; }
@@ -184,6 +202,7 @@ details form { padding-top: 8px; }
   <canvas id="cena" aria-label="Cena 3D com um reservatório para cada categoria de gasto"></canvas>
   <div id="vinheta"></div>
   <div id="labels"></div>
+  <div id="baloes" aria-live="off"></div>
 
   <header class="topo">
     <h1 class="marca">Gastos em 3D</h1>
@@ -195,7 +214,8 @@ details form { padding-top: 8px; }
     <div class="total"><small>Gasto no mês</small><strong class="num" id="total"></strong></div>
     <div class="chips" id="chips"></div>
     <div class="acoes">
-      <button type="button" class="btn" id="som" aria-pressed="true">Som ligado</button>
+      <button type="button" class="btn" id="papo" aria-pressed="true" title="Liga ou pausa as conversas entre os personagens">Conversas</button>
+      <button type="button" class="btn" id="som" aria-pressed="true" title="Liga ou desliga os sons de alerta">Som</button>
       <button type="button" class="btn primario" id="nova">+ Nova categoria</button>
     </div>
   </header>
@@ -208,7 +228,7 @@ details form { padding-top: 8px; }
       <span>Estes são dados de exemplo.</span>
       <button type="button" class="btn" id="zerar">Começar do zero</button>
     </div>
-    <p class="dica">Arraste para girar · role para aproximar · clique em um reservatório para lançar um gasto</p>
+    <p class="dica">Arraste para girar · role para aproximar · clique em um reservatório para lançar um gasto · os personagens conversam sozinhos</p>
   </div>
 </div>
 
@@ -336,7 +356,8 @@ const N_GOTAS = 70;
 
 function montarCena() {
   const niveis = new Map([...tanques].map(([id, t]) => [id, t.nivel]));
-  tanques.forEach(t => scene.remove(t.grupo));
+  cancelarCena();
+  tanques.forEach(t => { scene.remove(t.grupo); scene.remove(t.boneco); });
   tanques.clear();
   const n = estado.categorias.length, raio = n <= 1 ? 0 : Math.max(3, n * 0.95);
   const maior = Math.max(1, ...estado.categorias.map(c => c.limite));
@@ -366,7 +387,10 @@ function montarCena() {
     gotas.visible = false; gotas.frustumCulled = false;
     grupo.add(base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas);
     scene.add(grupo);
-    tanques.set(cat.id, { cat, grupo, base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas, h, nivel: niveis.get(cat.id) || 0,
+    const rb = Math.max(1.7, raio - 1.9);
+    const casa = new THREE.Vector3(Math.cos(ang) * rb, 0, Math.sin(ang) * rb);
+    const boneco = criarBoneco(cat); boneco.position.copy(casa); boneco.scale.setScalar(1.5); scene.add(boneco);
+    tanques.set(cat.id, { cat, grupo, base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas, h, nivel: niveis.get(cat.id) || 0, boneco, casa, dest: casa.clone(), olhar: null,
       x: grupo.position.x, z: grupo.position.z, corBase: new THREE.Color(cat.cor), fase: Math.random() * 10 });
   });
   orbita.raioPadrao = raio * 2 + 10;
@@ -374,13 +398,183 @@ function montarCena() {
   montarRotulos();
 }
 
+/* ---------- Personagens: cada categoria tem um boneco que conversa, ensina e briga ---------- */
+const matOlho = new THREE.MeshBasicMaterial({ color: 0xffffff }), matPreto = new THREE.MeshBasicMaterial({ color: 0x141a22 });
+function criarBoneco(cat) {
+  const g = new THREE.Group();
+  const corpo = new THREE.Mesh(new THREE.SphereGeometry(0.42, 28, 20), new THREE.MeshStandardMaterial({ color: cat.cor, roughness: 0.55 }));
+  corpo.scale.y = 1.15; corpo.position.y = 0.55; corpo.userData.id = cat.id; g.add(corpo);
+  const partes = { corpo, sobr: [] };
+  for (const lado of [-1, 1]) {
+    const olho = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), matOlho); olho.position.set(lado * 0.15, 0.68, 0.33);
+    const pupila = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), matPreto); pupila.position.set(lado * 0.155, 0.68, 0.425);
+    const sob = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.045, 0.04), matPreto); sob.position.set(lado * 0.15, 0.85, 0.36); sob.userData.lado = lado;
+    const pe = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), corpo.material); pe.scale.set(1, 0.6, 1.3); pe.position.set(lado * 0.2, 0.08, 0.05);
+    g.add(olho, pupila, sob, pe); partes.sobr.push(sob);
+  }
+  partes.boca = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.024, 8, 16, Math.PI), matPreto); partes.boca.position.set(0, 0.45, 0.42);
+  g.add(partes.boca); g.userData = partes; return g;
+}
+const poeira = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(40 * 3), 3)),
+  new THREE.PointsMaterial({ size: 0.22, transparent: true, opacity: 0.8, color: 0xaab3bd }));
+poeira.visible = false; poeira.frustumCulled = false; scene.add(poeira);
+
+let cena = null, proximaCena = 4, alunoForcado = null, agoraS = 0;
+const baloes = new Map(), brigando = [], centroBriga = new THREE.Vector3();
+const sorteia = l => l[Math.floor(Math.random() * l.length)];
+function balao(id, texto, grito) {
+  tiraBalao(id);
+  const t = tanques.get(id); if (!t) return;
+  const el = document.createElement('div'); el.className = 'balao' + (grito ? ' grito' : '');
+  el.innerHTML = (grito ? '' : `<b>${esc(t.cat.nome)}</b>`) + esc(texto);
+  $('baloes').append(el); baloes.set(id, el);
+}
+function tiraBalao(id) { const el = baloes.get(id); if (el) { el.remove(); baloes.delete(id); } }
+function cancelarCena() {
+  cena = null; brigando.length = 0; baloes.forEach(el => el.remove()); baloes.clear(); proximaCena = agoraS + 5;
+  tanques.forEach(t => { t.dest.copy(t.casa); t.olhar = null; });
+}
+
+// Monta o roteiro: quem está bem ensina quem está mal; se o aluno não aceita (ou os dois estouraram), vira briga.
+function planejarCena() {
+  const lst = [...tanques.values()].map(t => ({ id: t.cat.id, t, cat: t.cat, st: situacao(t.cat) }));
+  if (lst.length < 2) return null;
+  const P = [], fala = (quem, texto, com) => P.push({ tipo: 'fala', quem, texto, com, dur: 1.9 + texto.length * 0.045 });
+  const pct = x => Math.round(x.st.r * 100);
+  const ruins = lst.filter(x => x.st.nivel !== 'ok');
+  let B = alunoForcado && ruins.find(x => x.id === alunoForcado); alunoForcado = null;
+  if (!B && ruins.length) B = sorteia(ruins.filter(x => x.st.nivel === 'crit').concat(ruins));
+  const ladoDe = x => { const d = x.t.casa.clone().normalize(); return x.t.casa.clone().add(new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(1.4)); };
+
+  if (!B) {                                   // todo mundo dentro do limite: elogio
+    const A = sorteia(lst); B = sorteia(lst.filter(x => x !== A));
+    P.push({ tipo: 'andar', quem: A.id, para: ladoDe(B) });
+    fala(A.id, sorteia([`Boa, ${B.cat.nome}! Só ${pct(B)}% do limite.`, `${B.cat.nome}, ${pct(B)}% do limite. Assim sobra dinheiro no fim do mês!`]), B.id);
+    fala(B.id, sorteia(['Aprendi com você!', 'Devagar e sempre.', `E você em ${pct(A)}%. Estamos bem!`]), A.id);
+    P.push({ tipo: 'casa', quem: [A.id] }); return P;
+  }
+  const outros = lst.filter(x => x !== B), bons = outros.filter(x => x.st.nivel === 'ok');
+  const A = bons.length ? sorteia(bons) : sorteia(outros), ponto = ladoDe(B), crit = B.st.nivel === 'crit';
+  P.push({ tipo: 'andar', quem: A.id, para: ponto });
+  if (A.st.nivel === 'ok') {                  // lição
+    fala(A.id, crit ? `${B.cat.nome}, você estourou o limite em ${brl0.format(B.st.gasto - B.cat.limite)}!` : `${B.cat.nome}, cuidado: você já usou ${pct(B)}% do limite.`, B.id);
+    fala(A.id, sorteia([`Eu estou em ${pct(A)}%. Anoto tudo e paro antes do anel âmbar.`, `Olha eu: ${pct(A)}%. Antes de gastar, pergunto se dá para esperar.`, `Meu segredo? Limite é limite. Estou em ${pct(A)}%.`]), B.id);
+    if (crit && Math.random() < 0.5) {
+      fala(B.id, sorteia(['Cuida da sua vida!', 'Fácil falar, você nem tem boleto!', 'Não enche!']), A.id);
+      P.push({ tipo: 'briga', a: A.id, b: B.id, ponto, dur: 2.8 });
+      fala(B.id, 'Ai… tá bom. Vou me controlar.', A.id);
+      fala(A.id, 'Era só isso que eu queria ouvir.', B.id);
+    } else fala(B.id, crit ? 'Tem razão… passei do ponto.' : 'Verdade. Vou segurar até o fim do mês.', A.id);
+    const valor = crit ? Math.floor(Math.min((A.cat.limite - A.st.gasto) * 0.5, B.st.gasto - B.cat.limite + 10) / 10) * 10 : 0;
+    if (valor >= 10) {
+      fala(A.id, `Posso te passar ${brl0.format(valor)} do meu limite.`, B.id);
+      P.push({ tipo: 'proposta', de: A.id, para: B.id, valor });
+    }
+  } else {                                    // ninguém está bem: um acusa o outro
+    fala(A.id, `${B.cat.nome}, você gasta demais!`, B.id);
+    fala(B.id, `Olha quem fala! Você está em ${pct(A)}%!`, A.id);
+    P.push({ tipo: 'briga', a: A.id, b: B.id, ponto, dur: 2.8 });
+    fala(A.id, 'Chega… nós dois precisamos de freio.', B.id);
+    fala(B.id, 'Trégua. Sem gastos até o mês virar.', A.id);
+  }
+  P.push({ tipo: 'casa', quem: [A.id] });
+  return P;
+}
+function iniciarPasso(p) {
+  const t = tanques.get(p.quem);
+  if (p.tipo === 'andar' && t) t.dest.copy(p.para);
+  if (p.tipo === 'fala' && t) { balao(p.quem, p.texto); t.olhar = p.com; const o = tanques.get(p.com); if (o) o.olhar = p.quem; }
+  if (p.tipo === 'briga') {
+    const a = tanques.get(p.a), b = tanques.get(p.b);
+    centroBriga.copy(a.boneco.position).add(b.boneco.position).multiplyScalar(0.5); centroBriga.y = 0;
+    brigando.push(p.a, p.b); balao(p.a, 'POW!', true); balao(p.b, 'TOMA!', true); bip('warn');
+  }
+  if (p.tipo === 'proposta') oferta(p.de, p.para, p.valor);
+  if (p.tipo === 'casa') p.quem.forEach(id => { const x = tanques.get(id); if (x) { x.dest.copy(x.casa); x.olhar = null; } });
+}
+function terminarPasso(p) {
+  if (p.tipo === 'fala') tiraBalao(p.quem);
+  if (p.tipo === 'briga') {
+    brigando.length = 0; tiraBalao(p.a); tiraBalao(p.b);
+    const a = tanques.get(p.a), b = tanques.get(p.b);
+    a.boneco.position.copy(p.ponto); a.dest.copy(p.ponto); b.boneco.position.copy(b.casa); b.dest.copy(b.casa);
+  }
+}
+function tickCena(s) {
+  if (!cena) {
+    if (estado.conversas !== false && s > proximaCena && !document.hidden) { const P = planejarCena(); if (P) cena = { P, i: 0, t0: -1 }; else proximaCena = s + 5; }
+    return;
+  }
+  const p = cena.P[cena.i];
+  if (!p) { cena = null; tanques.forEach(t => { t.olhar = null; }); proximaCena = s + 8 + Math.random() * 6; return; }
+  if (cena.t0 < 0) { cena.t0 = s; iniciarPasso(p); }
+  let fim = true;
+  if (p.tipo === 'andar') { const t = tanques.get(p.quem); fim = !t || t.boneco.position.distanceTo(t.dest) < 0.3 || s - cena.t0 > 6; }
+  else if (p.tipo === 'fala' || p.tipo === 'briga') fim = s - cena.t0 > p.dur;
+  if (fim) { terminarPasso(p); cena.i++; cena.t0 = -1; }
+}
+function oferta(de, para, valor) {
+  const a = estado.categorias.find(c => c.id === de), b = estado.categorias.find(c => c.id === para); if (!a || !b) return;
+  const el = document.createElement('div'); el.className = 'toast oferta';
+  el.innerHTML = `<span>${esc(a.nome)} oferece ${brl0.format(valor)} do seu limite para ${esc(b.nome)}.</span><button type="button" class="sim">Transferir</button><button type="button">Agora não</button>`;
+  const [sim, nao] = el.querySelectorAll('button');
+  nao.onclick = () => el.remove();
+  sim.onclick = () => {
+    el.remove();
+    if (!estado.categorias.includes(a) || !estado.categorias.includes(b) || a.limite - valor <= 0) return;
+    a.limite -= valor; b.limite += valor; salvar(); montarCena(); focar();
+    aviso(`${brl0.format(valor)} do limite de ${a.nome} passaram para ${b.nome}.`);
+  };
+  $('toasts').append(el); setTimeout(() => el.remove(), 20000);
+}
+function animarBonecos(s, dt, w, h) {
+  tanques.forEach((t, id) => {
+    const b = t.boneco, st = situacao(t.cat), k = brigando.indexOf(id);
+    if (k >= 0) {                              // bolo de briga: giram um em volta do outro
+      const a = s * 13 + k * Math.PI;
+      b.position.set(centroBriga.x + Math.cos(a) * 0.6, Math.abs(Math.sin(s * 17 + k)) * 0.3, centroBriga.z + Math.sin(a) * 0.6);
+      b.rotation.y += dt * 14;
+    } else {
+      const dx = t.dest.x - b.position.x, dz = t.dest.z - b.position.z, d = Math.hypot(dx, dz); let rot;
+      if (d > 0.04) {
+        const passo = Math.min(d, 3.6 * dt); b.position.x += dx / d * passo; b.position.z += dz / d * passo;
+        b.position.y = reduzMovimento ? 0 : Math.abs(Math.sin(s * 11 + t.fase)) * 0.16; rot = Math.atan2(dx, dz);
+      } else {
+        b.position.y = reduzMovimento ? 0 : (st.nivel === 'crit' ? Math.abs(Math.sin(s * 9 + t.fase)) * 0.07 : Math.max(0, Math.sin(s * 2.2 + t.fase)) * 0.03);
+        const o = t.olhar && tanques.get(t.olhar), alvo = o ? o.boneco.position : camera.position;
+        rot = Math.atan2(alvo.x - b.position.x, alvo.z - b.position.z);
+      }
+      b.rotation.y += Math.atan2(Math.sin(rot - b.rotation.y), Math.cos(rot - b.rotation.y)) * (1 - Math.exp(-dt * 10));
+    }
+    // humor: tranquilo, preocupado ou bravo
+    const u = b.userData, bravo = st.nivel === 'crit' || k >= 0;
+    u.sobr.forEach(sb => { sb.rotation.z = bravo ? sb.userData.lado * 0.55 : st.nivel === 'warn' ? -sb.userData.lado * 0.4 : 0; });
+    u.boca.rotation.z = bravo || st.nivel === 'warn' ? 0 : Math.PI; u.boca.scale.y = !bravo && st.nivel === 'warn' ? 0.25 : 1;
+    u.boca.position.y = bravo || st.nivel === 'warn' ? 0.42 : 0.5;
+    u.corpo.material.emissive.copy(corTema.crit); u.corpo.material.emissiveIntensity = bravo ? 0.25 + 0.2 * Math.sin(s * 9) : 0;
+  });
+  poeira.visible = brigando.length > 0;
+  if (poeira.visible) {
+    const p = poeira.geometry.attributes.position;
+    for (let i = 0; i < 40; i++) { const a = i * 2.4 + s * 3, r = 0.4 + ((s * 1.7 + i * 0.21) % 1) * 1.0; p.setXYZ(i, centroBriga.x + Math.cos(a) * r, 0.15 + ((i * 0.37 + s) % 1) * 1.4, centroBriga.z + Math.sin(a) * r); }
+    p.needsUpdate = true;
+  }
+  baloes.forEach((el, id) => {
+    const t = tanques.get(id); if (!t) return;
+    tmp.set(t.boneco.position.x, t.boneco.position.y + 1.75, t.boneco.position.z).project(camera);
+    el.style.visibility = tmp.z > 1 ? 'hidden' : 'visible';
+    const x = Math.min(w - 120, Math.max(120, (tmp.x * 0.5 + 0.5) * w));
+    el.style.transform = `translate(-50%,-100%) translate(${x.toFixed(1)}px,${((-tmp.y * 0.5 + 0.5) * h - 8).toFixed(1)}px)`;
+  });
+}
+
 /* Câmera em órbita */
 const orbita = { teta: Math.PI / 2 - 0.5, fi: 0.98, raio: 16, raioAlvo: 16, raioPadrao: 16, alvo: new THREE.Vector3(0, 1.6, 0), alvoDesejado: new THREE.Vector3(0, 1.6, 0), desvioX: 0, desvioY: 0, tetaAlvo: null };
 function focar() {
-  const t = tanques.get(selecionada);
-  if (t) { orbita.alvoDesejado.set(t.x, t.h * 0.55, t.z); orbita.raioAlvo = Math.min(orbita.raioPadrao, (7 + t.h * 1.3) * (app.clientWidth <= 760 ? 1.9 : 1));
+  const t = tanques.get(selecionada), longe = orbita.raioPadrao * (app.clientWidth <= 760 ? 1.7 : 1);
+  if (t) { orbita.alvoDesejado.set(t.x, t.h * 0.55, t.z); orbita.raioAlvo = Math.min(longe, (7 + t.h * 1.3) * (app.clientWidth <= 760 ? 1.9 : 1));
     orbita.tetaAlvo = tanques.size > 1 ? Math.atan2(t.z, t.x) : null; }
-  else { orbita.alvoDesejado.set(0, 1.6, 0); orbita.raioAlvo = orbita.raioPadrao; orbita.tetaAlvo = null; }
+  else { orbita.alvoDesejado.set(0, 1.6, 0); orbita.raioAlvo = longe; orbita.tetaAlvo = null; }
 }
 
 const ponteiros = new Map(); let arrasto = 0, pinca = 0;
@@ -389,7 +583,7 @@ function tanqueEm(ev) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   raio.setFromCamera(ndc, camera);
-  const hit = raio.intersectObjects([...tanques.values()].map(t => t.vidro))[0];
+  const hit = raio.intersectObjects([...tanques.values()].flatMap(t => [t.vidro, t.boneco.userData.corpo]))[0];
   return hit ? hit.object.userData.id : null;
 }
 canvas.addEventListener('pointerdown', ev => { canvas.setPointerCapture(ev.pointerId); ponteiros.set(ev.pointerId, { x: ev.clientX, y: ev.clientY }); arrasto = 0; pinca = 0; });
@@ -399,7 +593,7 @@ canvas.addEventListener('pointermove', ev => {
   const dx = ev.clientX - p.x, dy = ev.clientY - p.y; p.x = ev.clientX; p.y = ev.clientY;
   if (ponteiros.size === 2) {
     const [a, b] = [...ponteiros.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (pinca) orbita.raioAlvo = Math.min(45, Math.max(4, orbita.raioAlvo * pinca / d));
+    if (pinca) orbita.raioAlvo = Math.min(60, Math.max(4, orbita.raioAlvo * pinca / d));
     pinca = d; arrasto = 99; return;
   }
   arrasto += Math.abs(dx) + Math.abs(dy);
@@ -417,6 +611,7 @@ canvas.addEventListener('wheel', ev => { ev.preventDefault(); orbita.raioAlvo = 
 function redimensionar() {
   const w = app.clientWidth, h = app.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  app.style.setProperty('--topo-h', (document.querySelector('.topo').offsetHeight + 4) + 'px');
 }
 new ResizeObserver(redimensionar).observe(app);
 
@@ -489,6 +684,7 @@ function quadro(agora) {
     const c = moedas[i]; c.v += 22 * dt; c.m.position.y -= c.v * dt; c.m.rotation.z += dt * 12;
     if (c.m.position.y <= c.chao) { scene.remove(c.m); moedas.splice(i, 1); }
   }
+  agoraS = s; tickCena(s); animarBonecos(s, dt, w, h);
   renderer.render(scene, camera);
   requestAnimationFrame(quadro);
 }
@@ -521,9 +717,10 @@ function atualizar() {
   $('chips').innerHTML = chips.join('');
   $('vinheta').className = cont.crit ? 'crit' : cont.warn ? 'warn' : '';
   $('exemplo').hidden = !estado.exemplo;
-  $('som').textContent = estado.som ? 'Som ligado' : 'Som desligado';
   $('som').setAttribute('aria-pressed', String(!!estado.som));
+  $('papo').setAttribute('aria-pressed', String(estado.conversas !== false));
   desenharPainel();
+  app.style.setProperty('--topo-h', (document.querySelector('.topo').offsetHeight + 4) + 'px');
 }
 
 function selecionar(id) {
@@ -626,6 +823,7 @@ $('painel').addEventListener('submit', ev => {
     $('g-valor').value = ''; $('g-desc').value = '';
     soltarMoeda(cat.id); atualizar(); $('g-valor').focus();
     const st = situacao(cat);
+    if (st.nivel !== 'ok') { alunoForcado = cat.id; if (!cena) proximaCena = agoraS + 1.5; }
     if (st.nivel === 'crit') { aviso(`${cat.nome}: ${st.texto[0].toLowerCase() + st.texto.slice(1)}.`, 'crit'); bip('crit'); }
     else if (st.nivel === 'warn' ) { aviso(`Atenção, ${cat.nome} chegou a ${Math.round(st.r * 100)}% do limite. Restam ${brl.format(cat.limite - st.gasto)}.`, 'warn'); if (antes !== 'warn') bip('warn'); }
   }
@@ -655,6 +853,7 @@ $('mes-ant').onclick = () => mudarMes(-1);
 $('mes-prox').onclick = () => mudarMes(1);
 $('nova').onclick = () => selecionar('nova');
 $('som').onclick = () => { estado.som = !estado.som; salvar(); atualizar(); if (estado.som) bip('warn'); };
+$('papo').onclick = () => { estado.conversas = estado.conversas === false; salvar(); if (estado.conversas === false) cancelarCena(); else proximaCena = agoraS + 1; atualizar(); };
 $('zerar').onclick = () => { estado = { categorias: [], gastos: [], exemplo: false, som: estado.som }; salvar(); selecionada = 'nova'; montarCena(); focar(); };
 window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && selecionada) selecionar(null); });
 

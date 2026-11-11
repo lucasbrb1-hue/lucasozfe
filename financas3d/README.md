@@ -23,6 +23,21 @@ Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 | Perto do limite (>= % de alerta) | anel âmbar pulsando, borda da tela âmbar, aviso e som |
 | Limite atingido ou estourado | líquido vermelho transbordando, reservatório tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
 
+## Personagens
+
+Cada categoria tem um personagem ao lado do seu reservatório, com humor
+conforme a situação (tranquilo, preocupado ou bravo). De tempos em tempos — e
+logo depois de um gasto que acende um alerta — eles interagem:
+
+- **Lição**: quem está dentro do limite vai até quem está mal e ensina.
+- **Briga**: se o aluno não aceita a bronca, ou se os dois estouraram, vira
+  briga (com poeira e tudo) até fazerem as pazes.
+- **Ajuda**: depois da lição, o professor pode oferecer parte do seu limite
+  ao colega estourado; você decide em "Transferir" ou "Agora não".
+- **Elogio**: com tudo em ordem, eles se parabenizam.
+
+O botão "Conversas" liga ou pausa as interações.
+
 Os dados ficam salvos apenas no navegador (`localStorage`). Na primeira
 abertura aparecem dados de exemplo; "Começar do zero" os apaga.
 
