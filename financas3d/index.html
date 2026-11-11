@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--CONTEUDO-->
+<title>Gastos em 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a cena 3D ocupa a tela inteira; barra de resumo no topo, painel da categoria
+   flutuando à direita (vira folha inferior no celular), rótulos presos aos reservatórios. */
+:root {
+  --bg: #e9eef3;          /* céu da cena */
+  --floor: #d5dde6;       /* piso */
+  --grid: #b9c5d2;
+  --surface: #ffffff;     /* painéis */
+  --surface-2: #f1f4f8;
+  --line: #d3dae3;
+  --fg: #14202e;
+  --muted: #5b6979;
+  --accent: #2f5fe0;
+  --on-accent: #ffffff;
+  --ok: #1f9d63;
+  --warn: #d98a00;
+  --crit: #dc3b32;
+  --glass: #9fb4c9;
+  --shadow: 0 10px 30px rgba(20, 32, 46, .14);
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c131c; --floor: #121c28; --grid: #22303f; --surface: #162130; --surface-2: #1d2a3b;
+    --line: #2b3a4d; --fg: #e8eef5; --muted: #93a2b4; --accent: #6f95ff; --on-accent: #0b1220;
+    --ok: #3ccf8a; --warn: #f5b13d; --crit: #ff5d52; --glass: #7f97b0;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .45); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c131c; --floor: #121c28; --grid: #22303f; --surface: #162130; --surface-2: #1d2a3b;
+  --line: #2b3a4d; --fg: #e8eef5; --muted: #93a2b4; --accent: #6f95ff; --on-accent: #0b1220;
+  --ok: #3ccf8a; --warn: #f5b13d; --crit: #ff5d52; --glass: #7f97b0;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45); color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 400 15px/1.45 var(--body); overflow: hidden;
+}
+*, *::before, *::after { box-sizing: border-box; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+#app { position: relative; height: 100%; overflow: hidden; }
+#cena { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+
+/* Vinheta de alarme nas bordas da tela */
+#vinheta { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .6s; }
+#vinheta.warn { box-shadow: inset 0 0 110px -20px var(--warn); opacity: .55; }
+#vinheta.crit { box-shadow: inset 0 0 150px -10px var(--crit); opacity: 1; animation: pulso 1.3s ease-in-out infinite; }
+@keyframes pulso { 50% { opacity: .35; } }
+
+/* Barra superior */
+.topo {
+  position: absolute; inset: 0 0 auto 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none; z-index: 3;
+}
+.topo > * { pointer-events: auto; }
+.marca { font: 700 20px/1 var(--display); letter-spacing: -.01em; margin: 0; }
+.mes { display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+.mes button { width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; font-size: 16px; line-height: 1; }
+.mes button:hover { background: var(--surface-2); }
+.mes span { min-width: 9.5em; text-align: center; font-weight: 600; }
+.total { display: flex; flex-direction: column; min-width: 0; }
+.total small { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.total strong { font: 700 18px/1.2 var(--display); }
+.total strong span { color: var(--muted); font: 500 13px var(--body); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--surface); border: 1px solid var(--line); }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.chip.crit { color: var(--crit); } .chip.warn { color: var(--warn); } .chip.ok { color: var(--ok); }
+.acoes { margin-left: auto; display: flex; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 13px; font-weight: 600; }
+.btn:hover { background: var(--surface-2); }
+.btn.primario { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primario:hover { filter: brightness(1.08); background: var(--accent); }
+.btn.perigo { color: var(--crit); }
+.btn.bloco { width: 100%; }
+
+/* Rótulos presos aos reservatórios */
+.rotulo {
+  position: absolute; left: 0; top: 0; pointer-events: auto; text-align: center; white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 5px 10px 6px;
+  box-shadow: var(--shadow); will-change: transform;
+}
+.rotulo b { display: block; font: 700 14px/1.2 var(--display); }
+.rotulo span { display: block; font-size: 12px; color: var(--muted); }
+.rotulo em { display: block; font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.rotulo.ok em { color: var(--ok); }
+.rotulo.warn { border-color: var(--warn); } .rotulo.warn em { color: var(--warn); }
+.rotulo.crit { border-color: var(--crit); background: var(--crit); color: #fff; }
+.rotulo.crit span, .rotulo.crit em { color: #fff; }
+.rotulo.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Painel da categoria */
+#painel {
+  position: absolute; top: 76px; bottom: 16px; right: max(16px, env(safe-area-inset-right, 0px)); width: 340px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; overflow: hidden; z-index: 4;
+}
+#painel .corpo { overflow-y: auto; padding: 0 18px 18px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.cab { display: flex; align-items: center; gap: 10px; padding: 14px 12px 12px 18px; }
+.cab i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.cab h2 { font: 700 20px/1.15 var(--display); margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fechar { border: 0; background: transparent; width: 32px; height: 32px; border-radius: 8px; font-size: 20px; line-height: 1; color: var(--muted); }
+.fechar:hover { background: var(--surface-2); }
+.situacao { border-radius: 12px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+.situacao.warn { background: color-mix(in srgb, var(--warn) 16%, var(--surface)); }
+.situacao.crit { background: color-mix(in srgb, var(--crit) 16%, var(--surface)); }
+.situacao .valor { font: 700 26px/1.1 var(--display); }
+.situacao .valor span { font: 500 13px var(--body); color: var(--muted); }
+.situacao p { margin: 0; font-weight: 600; }
+.situacao.ok p { color: var(--ok); } .situacao.warn p { color: var(--warn); } .situacao.crit p { color: var(--crit); }
+.barra { position: relative; height: 10px; border-radius: 5px; background: var(--line); }
+.barra > div { height: 100%; border-radius: 5px; max-width: 100%; transition: width .5s; }
+.barra > u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); }
+form { display: flex; flex-direction: column; gap: 10px; }
+.campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.campos .largo { grid-column: 1 / -1; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
+input[type="text"], input[type="date"] {
+  width: 100%; min-width: 0; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font-size: 15px;
+}
+input[type="range"] { width: 100%; accent-color: var(--warn); }
+.erro { color: var(--crit); font-size: 13px; font-weight: 600; margin: 0; }
+h3 { font: 700 13px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lista li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.lista li div { min-width: 0; overflow-wrap: anywhere; }
+.lista small { display: block; color: var(--muted); font-size: 12px; }
+.lista .x { border: 0; background: transparent; color: var(--muted); width: 28px; height: 28px; border-radius: 7px; font-size: 16px; }
+.lista .x:hover { background: var(--surface-2); color: var(--crit); }
+.vazio { color: var(--muted); margin: 0; }
+details summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+details form { padding-top: 8px; }
+
+/* Avisos */
+#toasts { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(440px, calc(100% - 32px)); pointer-events: none; z-index: 5; }
+.toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; font-weight: 600; box-shadow: var(--shadow); background: var(--surface); border: 1px solid var(--line); animation: entra .25s ease-out; }
+.toast.warn { background: var(--warn); border-color: var(--warn); color: #1d1300; }
+.toast.crit { background: var(--crit); border-color: var(--crit); color: #fff; }
+.toast button { margin-left: auto; border: 0; background: transparent; color: inherit; font-size: 18px; line-height: 1; padding: 0 2px; }
+@keyframes entra { from { transform: translateY(-8px); opacity: 0; } }
+
+.rodape { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: 14px; z-index: 3; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; max-width: calc(100% - 32px); }
+.dica { color: var(--muted); font-size: 12.5px; margin: 0; }
+.exemplo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--surface); border: 1px dashed var(--muted); border-radius: 12px; padding: 8px 12px; font-size: 13px; }
+
+@media (max-width: 760px) {
+  .marca { font-size: 17px; }
+  .acoes { margin-left: 0; }
+  #painel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 50%; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #toasts { top: calc(8px + env(safe-area-inset-top, 0px)); }
+  .chips:empty { display: none; }
+  .dica { display: none; }
+  .painel-aberto .rodape { display: none; }
+  .painel-aberto .total, .painel-aberto .chips, .painel-aberto .acoes { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #vinheta.crit { animation: none; }
+  .toast { animation: none; }
+}
+</style>
+
+<div id="app">
+  <canvas id="cena" aria-label="Cena 3D com um reservatório para cada categoria de gasto"></canvas>
+  <div id="vinheta"></div>
+  <div id="labels"></div>
+
+  <header class="topo">
+    <h1 class="marca">Gastos em 3D</h1>
+    <div class="mes">
+      <button type="button" id="mes-ant" aria-label="Mês anterior">‹</button>
+      <span id="mes-nome"></span>
+      <button type="button" id="mes-prox" aria-label="Próximo mês">›</button>
+    </div>
+    <div class="total"><small>Gasto no mês</small><strong class="num" id="total"></strong></div>
+    <div class="chips" id="chips"></div>
+    <div class="acoes">
+      <button type="button" class="btn" id="som" aria-pressed="true">Som ligado</button>
+      <button type="button" class="btn primario" id="nova">+ Nova categoria</button>
+    </div>
+  </header>
+
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <aside id="painel" hidden></aside>
+
+  <div class="rodape">
+    <div class="exemplo" id="exemplo" hidden>
+      <span>Estes são dados de exemplo.</span>
+      <button type="button" class="btn" id="zerar">Começar do zero</button>
+    </div>
+    <p class="dica">Arraste para girar · role para aproximar · clique em um reservatório para lançar um gasto</p>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ---------- Dados ---------- */
+const CHAVE = 'gastos3d.v1';
+const CORES = ['#3b6ff0', '#11a39a', '#8a5cf0', '#9a6b3f', '#4c9a3f', '#1492c9', '#6b6fd6', '#7d8a2e'];
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const brl0 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function exemplo() {
+  const m = hoje().slice(0, 7);
+  const cats = [
+    ['Casa', 2200, [['Aluguel', 1500, '05'], ['Condomínio', 350, '08']]],
+    ['Comida', 1200, [['Mercado', 420, '03'], ['Feira', 95, '07'], ['Restaurante', 180, '09']]],
+    ['Transporte', 500, [['Combustível', 280, '02'], ['Corridas de app', 265, '10']]],
+    ['Lazer', 400, [['Cinema', 60, '06'], ['Streaming', 55, '01']]],
+    ['Saúde', 350, [['Farmácia', 120, '04']]],
+  ];
+  const s = { categorias: [], gastos: [], exemplo: true, som: true };
+  cats.forEach(([nome, limite, gs], i) => {
+    const id = 'c' + i;
+    s.categorias.push({ id, nome, limite, alerta: 0.8, cor: CORES[i % CORES.length] });
+    gs.forEach(([desc, valor, dia], j) => s.gastos.push({ id: id + 'g' + j, cat: id, desc, valor, data: `${m}-${dia}` }));
+  });
+  return s;
+}
+function carregar() {
+  try {
+    const s = JSON.parse(localStorage.getItem(CHAVE));
+    if (s && Array.isArray(s.categorias) && Array.isArray(s.gastos)) return s;
+  } catch (e) { /* sem armazenamento: segue com o exemplo */ }
+  return exemplo();
+}
+function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(estado)); } catch (e) { /* ignora */ } }
+
+let estado = carregar();
+let mes = hoje().slice(0, 7);
+let selecionada = null;      // id da categoria aberta no painel, ou 'nova'
+let confirmarExclusao = false;
+
+const gastosDe = id => estado.gastos.filter(g => g.cat === id && g.data.startsWith(mes));
+const somaDe = id => gastosDe(id).reduce((t, g) => t + g.valor, 0);
+function situacao(cat) {
+  const gasto = somaDe(cat.id), r = cat.limite > 0 ? gasto / cat.limite : 0;
+  const nivel = r >= 1 ? 'crit' : r >= cat.alerta ? 'warn' : 'ok';
+  let texto, curto;
+  if (r > 1) { texto = `Estourou o limite em ${brl.format(gasto - cat.limite)}`; curto = 'Estourou'; }
+  else if (r === 1) { texto = 'Limite atingido'; curto = 'No limite'; }
+  else if (nivel === 'warn') { texto = `Perto do limite: restam ${brl.format(cat.limite - gasto)}`; curto = 'Perto do limite'; }
+  else { texto = `Restam ${brl.format(cat.limite - gasto)}`; curto = 'Dentro do limite'; }
+  return { gasto, r, nivel, texto, curto };
+}
+function lerValor(txt) {
+  let s = String(txt).replace(/[R$\s]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
+}
+
+/* ---------- Som e avisos ---------- */
+let audio = null;
+function bip(nivel) {
+  if (!estado.som) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const notas = nivel === 'crit' ? [880, 660, 880, 660] : [660, 784];
+    notas.forEach((f, i) => {
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * 0.16;
+      o.type = nivel === 'crit' ? 'square' : 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.12, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+      o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.15);
+    });
+  } catch (e) { /* sem áudio */ }
+}
+const $ = id => document.getElementById(id);
+function aviso(msg, nivel = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + nivel;
+  el.innerHTML = `<span>${esc(msg)}</span><button type="button" aria-label="Fechar aviso">×</button>`;
+  el.querySelector('button').onclick = () => el.remove();
+  $('toasts').append(el);
+  while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
+  setTimeout(() => el.remove(), nivel ? 8000 : 4000);
+}
+
+/* ---------- Cena 3D ---------- */
+const canvas = $('cena'), app = $('app');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xffffff, 22, 60);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.5));
+const sol = new THREE.DirectionalLight(0xffffff, 1.6); sol.position.set(6, 12, 8); scene.add(sol);
+
+const matPiso = new THREE.MeshStandardMaterial({ roughness: 0.95 });
+const piso = new THREE.Mesh(new THREE.CircleGeometry(70, 64), matPiso);
+piso.rotation.x = -Math.PI / 2; scene.add(piso);
+let grade = null;
+const corTema = { ok: new THREE.Color(), warn: new THREE.Color(), crit: new THREE.Color(), glass: new THREE.Color(), fg: new THREE.Color() };
+
+function aplicarTema() {
+  const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
+  scene.background = new THREE.Color(v('--bg')); scene.fog.color.set(v('--bg'));
+  matPiso.color.set(v('--floor'));
+  if (grade) { scene.remove(grade); grade.geometry.dispose(); }
+  grade = new THREE.GridHelper(60, 60, v('--grid'), v('--grid')); grade.position.y = 0.01; scene.add(grade);
+  for (const k of ['ok', 'warn', 'crit', 'glass', 'fg']) corTema[k].set(v('--' + k));
+  tanques.forEach(t => { t.vidro.material.color.copy(corTema.glass); t.aroAlerta.material.color.copy(corTema.warn); t.base.material.color.set(v('--surface-2')); });
+}
+
+const tanques = new Map();   // id -> objetos 3D e estado da animação
+const moedas = [];
+const reduzMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const geoLiquido = new THREE.CylinderGeometry(0.6, 0.6, 1, 40).translate(0, 0.5, 0);
+const N_GOTAS = 70;
+
+function montarCena() {
+  const niveis = new Map([...tanques].map(([id, t]) => [id, t.nivel]));
+  tanques.forEach(t => scene.remove(t.grupo));
+  tanques.clear();
+  const n = estado.categorias.length, raio = n <= 1 ? 0 : Math.max(3, n * 0.95);
+  const maior = Math.max(1, ...estado.categorias.map(c => c.limite));
+  estado.categorias.forEach((cat, i) => {
+    const ang = Math.PI / 2 + (i / n) * Math.PI * 2;
+    const h = 1.6 + 3.2 * (cat.limite / maior);
+    const grupo = new THREE.Group();
+    grupo.position.set(Math.cos(ang) * raio, 0, Math.sin(ang) * raio);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.88, 0.95, 0.14, 40), new THREE.MeshStandardMaterial({ roughness: 0.6 }));
+    base.position.y = 0.07;
+    const liquido = new THREE.Mesh(geoLiquido, new THREE.MeshStandardMaterial({ color: cat.cor, roughness: 0.25, emissive: cat.cor, emissiveIntensity: 0.12 }));
+    liquido.position.y = 0.14;
+    const vidro = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, h, 40, 1, true),
+      new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide, depthWrite: false }));
+    vidro.position.y = 0.14 + h / 2; vidro.userData.id = cat.id; vidro.renderOrder = 2;
+    const aroTopo = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.035, 10, 48), new THREE.MeshStandardMaterial({ roughness: 0.4 }));
+    aroTopo.rotation.x = Math.PI / 2; aroTopo.position.y = 0.14 + h;
+    const aroAlerta = new THREE.Mesh(new THREE.TorusGeometry(0.71, 0.018, 8, 48), new THREE.MeshBasicMaterial());
+    aroAlerta.rotation.x = Math.PI / 2; aroAlerta.position.y = 0.14 + h * cat.alerta;
+    const aroEstado = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.05, 10, 56), new THREE.MeshBasicMaterial());
+    aroEstado.rotation.x = Math.PI / 2; aroEstado.position.y = 0.06;
+    const poca = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55 }));
+    poca.rotation.x = -Math.PI / 2; poca.position.y = 0.03; poca.visible = false;
+    const pos = new Float32Array(N_GOTAS * 3);
+    const gotas = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3)),
+      new THREE.PointsMaterial({ size: 0.09, transparent: true, opacity: 0.9 }));
+    gotas.visible = false; gotas.frustumCulled = false;
+    grupo.add(base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas);
+    scene.add(grupo);
+    tanques.set(cat.id, { cat, grupo, base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas, h, nivel: niveis.get(cat.id) || 0,
+      x: grupo.position.x, z: grupo.position.z, corBase: new THREE.Color(cat.cor), fase: Math.random() * 10 });
+  });
+  orbita.raioPadrao = raio * 2 + 10;
+  aplicarTema();
+  montarRotulos();
+}
+
+/* Câmera em órbita */
+const orbita = { teta: Math.PI / 2 - 0.5, fi: 0.98, raio: 16, raioAlvo: 16, raioPadrao: 16, alvo: new THREE.Vector3(0, 1.6, 0), alvoDesejado: new THREE.Vector3(0, 1.6, 0), desvioX: 0, desvioY: 0, tetaAlvo: null };
+function focar() {
+  const t = tanques.get(selecionada);
+  if (t) { orbita.alvoDesejado.set(t.x, t.h * 0.55, t.z); orbita.raioAlvo = Math.min(orbita.raioPadrao, (7 + t.h * 1.3) * (app.clientWidth <= 760 ? 1.9 : 1));
+    orbita.tetaAlvo = tanques.size > 1 ? Math.atan2(t.z, t.x) : null; }
+  else { orbita.alvoDesejado.set(0, 1.6, 0); orbita.raioAlvo = orbita.raioPadrao; orbita.tetaAlvo = null; }
+}
+
+const ponteiros = new Map(); let arrasto = 0, pinca = 0;
+const raio = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function tanqueEm(ev) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  raio.setFromCamera(ndc, camera);
+  const hit = raio.intersectObjects([...tanques.values()].map(t => t.vidro))[0];
+  return hit ? hit.object.userData.id : null;
+}
+canvas.addEventListener('pointerdown', ev => { canvas.setPointerCapture(ev.pointerId); ponteiros.set(ev.pointerId, { x: ev.clientX, y: ev.clientY }); arrasto = 0; pinca = 0; });
+canvas.addEventListener('pointermove', ev => {
+  const p = ponteiros.get(ev.pointerId);
+  if (!p) { canvas.style.cursor = tanqueEm(ev) ? 'pointer' : 'grab'; return; }
+  const dx = ev.clientX - p.x, dy = ev.clientY - p.y; p.x = ev.clientX; p.y = ev.clientY;
+  if (ponteiros.size === 2) {
+    const [a, b] = [...ponteiros.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinca) orbita.raioAlvo = Math.min(45, Math.max(4, orbita.raioAlvo * pinca / d));
+    pinca = d; arrasto = 99; return;
+  }
+  arrasto += Math.abs(dx) + Math.abs(dy);
+  orbita.tetaAlvo = null; orbita.teta += dx * 0.006;
+  orbita.fi = Math.min(1.5, Math.max(0.25, orbita.fi - dy * 0.005));
+});
+const soltar = ev => {
+  if (!ponteiros.delete(ev.pointerId)) return;
+  pinca = 0;
+  if (ev.type === 'pointerup' && arrasto < 6) selecionar(tanqueEm(ev));
+};
+canvas.addEventListener('pointerup', soltar); canvas.addEventListener('pointercancel', soltar);
+canvas.addEventListener('wheel', ev => { ev.preventDefault(); orbita.raioAlvo = Math.min(45, Math.max(4, orbita.raioAlvo * Math.exp(ev.deltaY * 0.001))); }, { passive: false });
+
+function redimensionar() {
+  const w = app.clientWidth, h = app.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(redimensionar).observe(app);
+
+function soltarMoeda(id) {
+  const t = tanques.get(id); if (!t || reduzMovimento) return;
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 24), new THREE.MeshStandardMaterial({ color: 0xf2c230, metalness: 0.7, roughness: 0.3 }));
+  m.position.set(t.x, t.h + 3, t.z); m.rotation.x = Math.PI / 2; scene.add(m);
+  moedas.push({ m, v: 0, chao: 0.14 + Math.min(1, t.nivel) * t.h });
+}
+
+const tmp = new THREE.Vector3(), cor = new THREE.Color();
+let anterior = performance.now();
+function quadro(agora) {
+  const dt = Math.min(0.05, (agora - anterior) / 1000), s = agora / 1000; anterior = agora;
+  const k = 1 - Math.exp(-dt * 5);
+
+  // enquadramento: desloca a cena para não ficar atrás do painel
+  const w = app.clientWidth, h = app.clientHeight, painel = $('painel');
+  const estreito = w <= 760, aberto = !painel.hidden;
+  const dx = aberto && !estreito ? (painel.offsetWidth + 16) / 2 : 0, dy = aberto && estreito ? painel.offsetHeight / 2 : 0;
+  orbita.desvioX += (dx - orbita.desvioX) * k; orbita.desvioY += (dy - orbita.desvioY) * k;
+  camera.setViewOffset(w, h, orbita.desvioX, orbita.desvioY, w, h);
+  if (orbita.tetaAlvo !== null) orbita.teta += Math.atan2(Math.sin(orbita.tetaAlvo - orbita.teta), Math.cos(orbita.tetaAlvo - orbita.teta)) * k;
+  orbita.alvo.lerp(orbita.alvoDesejado, k); orbita.raio += (orbita.raioAlvo - orbita.raio) * k;
+  camera.position.set(
+    orbita.alvo.x + orbita.raio * Math.sin(orbita.fi) * Math.cos(orbita.teta),
+    orbita.alvo.y + orbita.raio * Math.cos(orbita.fi),
+    orbita.alvo.z + orbita.raio * Math.sin(orbita.fi) * Math.sin(orbita.teta));
+  camera.lookAt(orbita.alvo);
+
+  tanques.forEach((t, id) => {
+    const st = situacao(t.cat), pulso = 0.5 + 0.5 * Math.sin(s * (st.nivel === 'crit' ? 9 : 4) + t.fase);
+    t.nivel += (st.r - t.nivel) * (1 - Math.exp(-dt * 3));
+    t.liquido.scale.y = Math.max(0.001, Math.min(t.nivel, 1.03) * t.h);
+    t.liquido.visible = t.nivel > 0.002;
+    const m = t.liquido.material;
+    cor.copy(t.corBase); if (st.nivel === 'crit') cor.lerp(corTema.crit, 0.92);
+    m.color.copy(cor); m.emissive.copy(cor);
+    m.emissiveIntensity = st.nivel === 'crit' ? 0.25 + 0.6 * pulso : st.nivel === 'warn' ? 0.12 + 0.3 * pulso : 0.12;
+    t.aroEstado.material.color.copy(corTema[st.nivel]);
+    t.aroEstado.scale.setScalar(st.nivel === 'ok' || reduzMovimento ? 1 : 1 + (st.nivel === 'crit' ? 0.14 : 0.06) * pulso);
+    t.aroTopo.material.color.copy(st.nivel === 'crit' ? corTema.crit : corTema.fg);
+    const tremor = st.nivel === 'crit' && !reduzMovimento ? 0.025 : 0;
+    t.grupo.position.x = t.x + Math.sin(s * 47 + t.fase) * tremor; t.grupo.position.z = t.z + Math.cos(s * 53 + t.fase) * tremor;
+    // transbordo
+    const sobra = Math.max(0, t.nivel - 1);
+    t.poca.visible = t.gotas.visible = sobra > 0.005;
+    if (t.poca.visible) {
+      t.poca.material.color.copy(corTema.crit); t.gotas.material.color.copy(corTema.crit);
+      t.poca.scale.setScalar(1.15 + Math.min(0.7, sobra * 1.5));
+      const p = t.gotas.geometry.attributes.position, topo = 0.14 + t.h;
+      for (let i = 0; i < N_GOTAS; i++) {
+        const a = i * 2.399, q = ((s * 0.9 + i * 0.137) % 1);
+        p.setXYZ(i, Math.cos(a) * (0.74 + q * 0.08), topo * (1 - q * q), Math.sin(a) * (0.74 + q * 0.08));
+      }
+      p.needsUpdate = true;
+    }
+    // rótulo
+    const el = t.rotulo;
+    if (el) {
+      tmp.set(t.x, t.h + 0.55, t.z).project(camera);
+      const fora = tmp.z > 1 || Math.abs(tmp.x) > 1.3;
+      el.style.visibility = fora ? 'hidden' : 'visible';
+      el.style.transform = `translate(-50%,-100%) translate(${((tmp.x * 0.5 + 0.5) * w).toFixed(1)}px,${((-tmp.y * 0.5 + 0.5) * h).toFixed(1)}px)`;
+      el.style.zIndex = String(Math.round((1 - tmp.z) * 10000));
+    }
+  });
+
+  for (let i = moedas.length - 1; i >= 0; i--) {
+    const c = moedas[i]; c.v += 22 * dt; c.m.position.y -= c.v * dt; c.m.rotation.z += dt * 12;
+    if (c.m.position.y <= c.chao) { scene.remove(c.m); moedas.splice(i, 1); }
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(quadro);
+}
+
+/* ---------- Interface ---------- */
+function montarRotulos() {
+  const cx = $('labels'); cx.innerHTML = '';
+  tanques.forEach((t, id) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.onclick = () => selecionar(id);
+    cx.append(b); t.rotulo = b;
+  });
+  atualizar();
+}
+function atualizar() {
+  const d = new Date(mes + '-15T12:00:00');
+  const nomeMes = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  $('mes-nome').textContent = nomeMes[0].toUpperCase() + nomeMes.slice(1);
+  let total = 0, limite = 0; const cont = { crit: 0, warn: 0 };
+  tanques.forEach((t, id) => {
+    const st = situacao(t.cat); total += st.gasto; limite += t.cat.limite; if (st.nivel !== 'ok') cont[st.nivel]++;
+    t.rotulo.className = `rotulo ${st.nivel}${id === selecionada ? ' sel' : ''}`;
+    t.rotulo.innerHTML = `<b>${esc(t.cat.nome)}</b><span class="num">${brl0.format(st.gasto)} de ${brl0.format(t.cat.limite)} · ${Math.round(st.r * 100)}%</span>${st.nivel === 'ok' ? '' : `<em>${st.curto}</em>`}`;
+  });
+  $('total').innerHTML = `${brl.format(total)} <span>de ${brl.format(limite)}</span>`;
+  const chips = [];
+  if (cont.crit) chips.push(`<span class="chip crit">${cont.crit} ${cont.crit > 1 ? 'estouradas' : 'estourada'}</span>`);
+  if (cont.warn) chips.push(`<span class="chip warn">${cont.warn} perto do limite</span>`);
+  if (!chips.length && tanques.size) chips.push('<span class="chip ok">Tudo dentro do limite</span>');
+  $('chips').innerHTML = chips.join('');
+  $('vinheta').className = cont.crit ? 'crit' : cont.warn ? 'warn' : '';
+  $('exemplo').hidden = !estado.exemplo;
+  $('som').textContent = estado.som ? 'Som ligado' : 'Som desligado';
+  $('som').setAttribute('aria-pressed', String(!!estado.som));
+  desenharPainel();
+}
+
+function selecionar(id) {
+  selecionada = id; confirmarExclusao = false; focar(); atualizar();
+  if (id) { const campo = $('g-valor') || $('n-nome'); if (campo && app.clientWidth > 760) campo.focus(); }
+}
+
+function desenharPainel(erro = '') {
+  const p = $('painel');
+  app.classList.toggle('painel-aberto', !!selecionada);
+  if (!selecionada) { p.hidden = true; p.innerHTML = ''; return; }
+  // preserva o que estava sendo digitado
+  const digitado = {}; p.querySelectorAll('input').forEach(i => { digitado[i.id] = i.value; });
+  const foco = document.activeElement && p.contains(document.activeElement) ? document.activeElement.id : null;
+  const aberto = p.querySelector('details') ? p.querySelector('details').open : false;
+  const idAntes = p.dataset.id;
+  p.hidden = false; p.dataset.id = selecionada;
+
+  if (selecionada === 'nova') {
+    p.innerHTML = `
+      <div class="cab"><h2>Nova categoria</h2><button type="button" class="fechar" data-acao="fechar" aria-label="Fechar">×</button></div>
+      <div class="corpo"><form id="f-nova" novalidate>
+        <label>Nome<input type="text" id="n-nome" maxlength="24" placeholder="Ex.: Educação" autocomplete="off"></label>
+        <label>Limite mensal (R$)<input type="text" id="n-limite" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+        <label>Avisar ao chegar em <output id="n-alerta-v">80%</output><input type="range" id="n-alerta" min="50" max="100" step="5" value="80"></label>
+        ${erro ? `<p class="erro">${esc(erro)}</p>` : ''}
+        <button type="submit" class="btn primario bloco">Criar categoria</button>
+      </form></div>`;
+  } else {
+    const cat = estado.categorias.find(c => c.id === selecionada);
+    if (!cat) { selecionada = null; return desenharPainel(); }
+    const st = situacao(cat), lista = gastosDe(cat.id).sort((a, b) => b.data.localeCompare(a.data));
+    const dataPadrao = mes === hoje().slice(0, 7) ? hoje() : mes + '-01';
+    p.innerHTML = `
+      <div class="cab"><i style="background:${cat.cor}"></i><h2>${esc(cat.nome)}</h2><button type="button" class="fechar" data-acao="fechar" aria-label="Fechar">×</button></div>
+      <div class="corpo">
+        <div class="situacao ${st.nivel}">
+          <div class="valor num">${brl.format(st.gasto)} <span>de ${brl.format(cat.limite)}</span></div>
+          <div class="barra"><div style="width:${Math.min(100, st.r * 100)}%;background:var(--${st.nivel})"></div><u style="left:${cat.alerta * 100}%" title="Ponto de alerta"></u></div>
+          <p>${esc(st.texto)}</p>
+        </div>
+        <form id="f-gasto" novalidate>
+          <h3>Lançar gasto</h3>
+          <div class="campos">
+            <label>Valor (R$)<input type="text" id="g-valor" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+            <label>Data<input type="date" id="g-data" value="${dataPadrao}"></label>
+            <label class="largo">Descrição<input type="text" id="g-desc" maxlength="40" placeholder="Ex.: Mercado" autocomplete="off"></label>
+          </div>
+          ${erro ? `<p class="erro">${esc(erro)}</p>` : ''}
+          <button type="submit" class="btn primario bloco">Adicionar gasto</button>
+        </form>
+        <div>
+          <h3>Gastos do mês</h3>
+          ${lista.length ? `<ul class="lista">${lista.map(g => `<li><div>${esc(g.desc || 'Sem descrição')}<small>${g.data.slice(8)}/${g.data.slice(5, 7)}</small></div><span class="num">${brl.format(g.valor)}</span><button type="button" class="x" data-acao="remover" data-id="${g.id}" aria-label="Remover ${esc(g.desc || 'gasto')}">×</button></li>`).join('')}</ul>` : '<p class="vazio">Nenhum gasto lançado neste mês.</p>'}
+        </div>
+        <details ${aberto && idAntes === selecionada ? 'open' : ''}>
+          <summary>Limite e alerta</summary>
+          <form id="f-config" novalidate>
+            <label>Nome<input type="text" id="c-nome" maxlength="24" value="${esc(cat.nome)}" autocomplete="off"></label>
+            <label>Limite mensal (R$)<input type="text" id="c-limite" inputmode="decimal" value="${cat.limite.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}" autocomplete="off"></label>
+            <label>Avisar ao chegar em <output id="c-alerta-v">${Math.round(cat.alerta * 100)}%</output><input type="range" id="c-alerta" min="50" max="100" step="5" value="${Math.round(cat.alerta * 100)}"></label>
+            <button type="submit" class="btn bloco">Salvar</button>
+            <button type="button" class="btn perigo bloco" data-acao="excluir">${confirmarExclusao ? 'Confirmar: excluir categoria e seus gastos' : 'Excluir categoria'}</button>
+          </form>
+        </details>
+      </div>`;
+  }
+  if (idAntes === selecionada) {
+    for (const [id, v] of Object.entries(digitado)) { const i = $(id); if (i && id[0] !== 'c' && v) i.value = v; }
+    if (foco && $(foco)) $(foco).focus();
+  }
+  p.querySelectorAll('input[type="range"]').forEach(r => { r.oninput = () => { $(r.id + '-v').textContent = r.value + '%'; }; r.oninput(); });
+}
+
+$('painel').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-acao]'); if (!b) return;
+  const acao = b.dataset.acao;
+  if (acao === 'fechar') selecionar(null);
+  if (acao === 'remover') { estado.gastos = estado.gastos.filter(g => g.id !== b.dataset.id); salvar(); atualizar(); }
+  if (acao === 'excluir') {
+    if (!confirmarExclusao) { confirmarExclusao = true; desenharPainel(); return; }
+    const nome = estado.categorias.find(c => c.id === selecionada).nome;
+    estado.categorias = estado.categorias.filter(c => c.id !== selecionada);
+    estado.gastos = estado.gastos.filter(g => g.cat !== selecionada);
+    selecionada = null; confirmarExclusao = false; salvar(); montarCena(); focar();
+    aviso(`Categoria ${nome} excluída.`);
+  }
+});
+
+$('painel').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const f = ev.target.id;
+  if (f === 'f-gasto') {
+    const cat = estado.categorias.find(c => c.id === selecionada);
+    const valor = lerValor($('g-valor').value), data = $('g-data').value || hoje();
+    if (!(valor > 0)) { desenharPainel('Informe um valor maior que zero, por exemplo 45,90.'); $('g-valor').focus(); return; }
+    const antes = situacao(cat).nivel;
+    estado.gastos.push({ id: novoId(), cat: cat.id, valor, desc: $('g-desc').value.trim(), data });
+    mes = data.slice(0, 7); salvar();
+    $('g-valor').value = ''; $('g-desc').value = '';
+    soltarMoeda(cat.id); atualizar(); $('g-valor').focus();
+    const st = situacao(cat);
+    if (st.nivel === 'crit') { aviso(`${cat.nome}: ${st.texto[0].toLowerCase() + st.texto.slice(1)}.`, 'crit'); bip('crit'); }
+    else if (st.nivel === 'warn' ) { aviso(`Atenção, ${cat.nome} chegou a ${Math.round(st.r * 100)}% do limite. Restam ${brl.format(cat.limite - st.gasto)}.`, 'warn'); if (antes !== 'warn') bip('warn'); }
+  }
+  if (f === 'f-config') {
+    const cat = estado.categorias.find(c => c.id === selecionada);
+    const nome = $('c-nome').value.trim(), limite = lerValor($('c-limite').value);
+    if (!nome || !(limite > 0)) { aviso('Informe um nome e um limite maior que zero.', 'warn'); return; }
+    cat.nome = nome; cat.limite = limite; cat.alerta = Number($('c-alerta').value) / 100;
+    salvar(); montarCena(); focar(); aviso('Limite salvo.');
+  }
+  if (f === 'f-nova') {
+    const nome = $('n-nome').value.trim(), limite = lerValor($('n-limite').value);
+    if (!nome) { desenharPainel('Dê um nome à categoria.'); $('n-nome').focus(); return; }
+    if (!(limite > 0)) { desenharPainel('Informe um limite maior que zero, por exemplo 500,00.'); $('n-limite').focus(); return; }
+    const usadas = new Set(estado.categorias.map(c => c.cor));
+    const cat = { id: novoId(), nome, limite, alerta: Number($('n-alerta').value) / 100, cor: CORES.find(c => !usadas.has(c)) || CORES[estado.categorias.length % CORES.length] };
+    estado.categorias.push(cat); salvar();
+    selecionada = cat.id; $('painel').dataset.id = ''; montarCena(); focar();
+  }
+});
+
+function mudarMes(d) {
+  const [a, m] = mes.split('-').map(Number), n = new Date(a, m - 1 + d, 1);
+  mes = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; atualizar();
+}
+$('mes-ant').onclick = () => mudarMes(-1);
+$('mes-prox').onclick = () => mudarMes(1);
+$('nova').onclick = () => selecionar('nova');
+$('som').onclick = () => { estado.som = !estado.som; salvar(); atualizar(); if (estado.som) bip('warn'); };
+$('zerar').onclick = () => { estado = { categorias: [], gastos: [], exemplo: false, som: estado.som }; salvar(); selecionada = 'nova'; montarCena(); focar(); };
+window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && selecionada) selecionar(null); });
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', aplicarTema);
+new MutationObserver(aplicarTema).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+redimensionar(); montarCena(); focar();
+orbita.raio = orbita.raioAlvo * 1.25;
+requestAnimationFrame(quadro);
+})();
+</script>
+<!--/CONTEUDO-->
+</body>
+</html>
