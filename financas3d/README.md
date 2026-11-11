@@ -29,13 +29,27 @@ Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 | Perto do limite (>= % de alerta) | anel âmbar pulsando, borda da tela âmbar, aviso e som |
 | Limite atingido ou estourado | objeto vermelho transbordando e tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
 
+## O Chefão: a renda
+
+O Chefão (de cartola, ao fundo da praça) é a fonte de entrada de dinheiro.
+Clique nele para informar a renda mensal fixa e lançar entradas extras (13º,
+bônus, freela). A pilha de moedas ao lado dele e a barra no rótulo mostram
+quanto da renda do mês ainda resta; cada gasto tira moedas.
+
+- Com menos de 20% da renda sobrando ele fica preocupado; se os gastos passam
+  da renda ele fica furioso e a tela entra em alerta ("Gastou mais do que entrou").
+- Ele participa das conversas: cobra quem estourou o limite, avisa quando a
+  soma dos limites passa da renda e elogia quando está tudo em ordem.
+- Com a renda informada, a meta passa a ser calculada por renda menos gastos
+  (antes disso, usa a soma dos limites).
+
 ## O objetivo: a meta de economia
 
 O centro da praça é a sua meta (uma viagem, um carro, a casa própria, uma
 reserva de emergência...). Você informa quanto custa e em quantos meses quer
 chegar lá. O monumento da meta se enche de ouro conforme o dinheiro guardado.
 
-- **Como se guarda**: a sobra de cada mês é a soma dos limites menos os gastos.
+- **Como se guarda**: a sobra de cada mês é a renda menos os gastos.
   Meses fechados ficam garantidos (ouro); a sobra do mês atual fica "em jogo"
   (ouro claro) e diminui a cada gasto. Um mês no vermelho tira do cofre.
 - **Só vale mês anotado**: um mês só entra no cofre se houver gastos lançados

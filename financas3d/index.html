@@ -189,6 +189,10 @@ details form { padding-top: 8px; }
 
 .barra.dupla > div:first-child { background: color-mix(in srgb, var(--ouro) 38%, var(--line)); }
 .barra.dupla > div + div { position: absolute; inset: 0 auto 0 0; background: var(--ouro); }
+.rotulo.chefe { border-width: 2px; border-color: var(--fg); min-width: 170px; }
+.rotulo.chefe.warn { border-color: var(--warn); }
+.rotulo.chefe .barra { height: 7px; margin-top: 5px; }
+.rotulo.chefe.crit .barra { background: rgba(255, 255, 255, .35); }
 .rotulo.meta { border-color: var(--ouro); border-width: 2px; }
 .rotulo.meta em { color: var(--ouro); }
 .rotulo.meta.warn em { color: var(--warn); }
@@ -264,7 +268,7 @@ input[type="number"] { width: 100%; min-width: 0; padding: 9px 10px; border-radi
       <span>Estes são dados de exemplo.</span>
       <button type="button" class="btn" id="zerar">Começar do zero</button>
     </div>
-    <p class="dica">Arraste para girar · role para aproximar · clique em um objeto para lançar um gasto · o monumento do centro é a sua meta de economia</p>
+    <p class="dica">Arraste para girar · role para aproximar · clique em um objeto para lançar um gasto · o Chefão ao fundo é a sua renda · o monumento do centro é a sua meta</p>
   </div>
 </div>
 
@@ -291,7 +295,7 @@ function exemplo() {
     ['Lazer', 400, [['Cinema', 60, '06'], ['Streaming', 55, '01']]],
     ['Saúde', 350, [['Farmácia', 120, '04']]],
   ];
-  const s = { categorias: [], gastos: [], exemplo: true, som: true, meta: { nome: 'Viagem de férias', valor: 3000, prazo: 6, tipo: 'viagem', desde: m, inicio: m, base: 0, marcos: {} } };
+  const s = { categorias: [], gastos: [], exemplo: true, som: true, renda: 5200, meta: { nome: 'Viagem de férias', valor: 3000, prazo: 6, tipo: 'viagem', desde: m, inicio: m, base: 0, marcos: {} } };
   cats.forEach(([nome, limite, gs], i) => {
     const id = 'c' + i;
     s.categorias.push({ id, nome, limite, alerta: 0.8, cor: CORES[i % CORES.length] });
@@ -346,6 +350,7 @@ const CONQUISTAS = [
   ['paz', 'Pacificador', 'Aceite uma ajuda entre categorias', j => j.ajudas >= 1],
   ['azul', 'Tudo no azul', 'Comece o dia com todas as categorias dentro do limite', j => !!j.azul],
   ['arquiteto', 'Arquiteto', 'Crie uma categoria', j => j.criadas >= 1],
+  ['chefe', 'Conheça o Chefão', 'Informe sua renda mensal', j => !!j.temRenda],
   ['destino', 'Com destino', 'Defina uma meta de economia', j => !!j.temMeta],
   ['sonho', 'Sonho realizado', 'Alcance uma meta de economia', j => j.sonhos >= 1],
 ];
@@ -429,10 +434,19 @@ function bonusDoDia() {
   fecharGanhos();
 }
 
+/* ---------- Chefão: a renda (dinheiro que entra) ---------- */
+const entradasDe = m => (estado.entradas || []).filter(e => e.data.startsWith(m));
+const rendaDe = m => (estado.renda || 0) + entradasDe(m).reduce((t, e) => t + e.valor, 0);
+const gastoDoMes = m => estado.gastos.reduce((t, g) => t + (g.data.startsWith(m) ? g.valor : 0), 0);
+function situacaoChefe() {
+  const renda = rendaDe(mes), gasto = gastoDoMes(mes), resto = renda - gasto, limites = estado.categorias.reduce((t, c) => t + c.limite, 0);
+  return { renda, gasto, resto, limites, f: renda > 0 ? Math.max(0, resto / renda) : 0, nivel: renda <= 0 ? 'ok' : resto <= 0 ? 'crit' : resto < renda * 0.2 ? 'warn' : 'ok' };
+}
+
 /* ---------- Meta de economia: o objetivo do jogo ---------- */
 const DIAS_MIN = 8;   // um mês só entra no cofre se houver gastos lançados em pelo menos 8 dias dele
 const META_TIPOS = { viagem: ['Viagem', 'aviao'], casa: ['Casa própria', 'casa'], carro: ['Carro', 'carro'], reserva: ['Reserva de emergência', 'porquinho'], outro: ['Outro objetivo', 'moedas'] };
-// Sobra de cada mês = soma dos limites - gastos. Meses fechados ficam garantidos; o mês atual fica "em jogo".
+// Sobra de cada mês = renda - gastos (ou soma dos limites - gastos, enquanto a renda não foi informada). Meses fechados ficam garantidos; o mês atual fica "em jogo".
 function calcularMeta() {
   const m = estado.meta; if (!m) return null;
   const atual = hoje().slice(0, 7), porMes = {};
@@ -440,9 +454,9 @@ function calcularMeta() {
     const k = g.data.slice(0, 7); if (k < m.desde || k > atual) continue;
     const x = porMes[k] || (porMes[k] = { t: 0, dias: new Set() }); x.t += g.valor; x.dias.add(g.data);
   }
-  const lim = estado.categorias.reduce((t, c) => t + c.limite, 0);
+  const limites = estado.categorias.reduce((t, c) => t + c.limite, 0), entra = k => rendaDe(k) > 0 ? rendaDe(k) : limites, lim = entra(atual);
   let guardado = 0, fora = 0;
-  for (const [k, x] of Object.entries(porMes)) if (k < atual) { if (x.dias.size >= DIAS_MIN) guardado += lim - x.t; else fora++; }
+  for (const [k, x] of Object.entries(porMes)) if (k < atual) { if (x.dias.size >= DIAS_MIN) guardado += entra(k) - x.t; else fora++; }
   const mesA = porMes[atual] || { t: 0, dias: new Set() };
   const prog = Math.max(0, guardado - (m.base || 0)), previsto = lim - mesA.t, restante = Math.max(0, m.valor - prog);
   const [a1, m1] = m.inicio.split('-').map(Number), [a2, m2] = atual.split('-').map(Number);
@@ -516,12 +530,75 @@ function aplicarTema() {
   if (grade) { scene.remove(grade); grade.geometry.dispose(); }
   grade = new THREE.GridHelper(60, 60, v('--grid'), v('--grid')); grade.position.y = 0.01; scene.add(grade);
   for (const k of ['ok', 'warn', 'crit', 'glass', 'fg']) corTema[k].set(v('--' + k));
+  if (chefao) chefao.base.material.color.set(v('--surface-2'));
   if (monumento) { monumento.ped.material.color.set(v('--surface-2')); if (monumento.matF) monumento.matF.color.copy(corTema.glass); }
   tanques.forEach(t => { t.matFantasma.color.copy(corTema.glass); t.aroAlerta.material.color.copy(corTema.warn); t.base.material.color.set(v('--surface-2')); });
 }
 
 const tanques = new Map();   // id -> objetos 3D e estado da animação
 let decor = new THREE.Group();
+// Chefão: personagem grande ao fundo; a pilha de moedas ao lado é o que resta da renda do mês
+let chefao = null;
+const moedasVoo = [];
+function montarChefao(x, z) {
+  if (chefao) scene.remove(chefao.grupo);
+  const g = new THREE.Group(), corpo = new THREE.Group(); g.position.set(x, 0, z);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x2b3442, roughness: 0.6 }), ouro = new THREE.MeshStandardMaterial({ color: 0xf7c62f, emissive: 0x6b4a00, metalness: 0.25, roughness: 0.3 });
+  const M = (geo, px, py, pz, m) => { const o = new THREE.Mesh(geo, m || mat); o.position.set(px, py, pz); corpo.add(o); return o; };
+  M(new THREE.SphereGeometry(0.55, 28, 20), 0, 0.7, 0).scale.set(1, 1.2, 0.9);
+  for (const l of [-1, 1]) M(new THREE.SphereGeometry(0.15, 12, 10), l * 0.22, 0.08, 0.08).scale.set(1, 0.6, 1.3);
+  M(new THREE.BoxGeometry(0.1, 0.32, 0.04), 0, 0.56, 0.49, new THREE.MeshStandardMaterial({ color: 0xd13b33, roughness: 0.6 }));          // gravata
+  M(new THREE.CylinderGeometry(0.42, 0.42, 0.04, 28), 0, 1.34, 0, matPreto); M(new THREE.CylinderGeometry(0.28, 0.3, 0.38, 28), 0, 1.54, 0, matPreto);   // cartola
+  M(new THREE.CylinderGeometry(0.306, 0.306, 0.07, 28), 0, 1.41, 0, ouro);
+  const partes = { mat, sobr: [], bocaY: 0.8 };
+  for (const l of [-1, 1]) {
+    M(new THREE.SphereGeometry(0.11, 16, 12), l * 0.17, 1.03, 0.39, matOlho); M(new THREE.SphereGeometry(0.05, 12, 10), l * 0.175, 1.03, 0.485, matPreto);
+    const sob = M(new THREE.BoxGeometry(0.2, 0.05, 0.04), l * 0.17, 1.2, 0.4, matPreto); sob.userData.lado = l; partes.sobr.push(sob);
+    M(new THREE.BoxGeometry(0.17, 0.05, 0.04), l * 0.09, 0.9, 0.5, matClaro).rotation.z = -l * 0.3;   // bigode
+  }
+  partes.boca = M(new THREE.TorusGeometry(0.09, 0.022, 8, 16, Math.PI), 0, 0.8, 0.5, matPreto);
+  corpo.scale.setScalar(2.6); g.add(corpo);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 0.14, 32), new THREE.MeshStandardMaterial({ roughness: 0.6 })); base.position.set(2.4, 0.07, 0.3); g.add(base);
+  const pilha = [];
+  for (let i = 0; i < 12; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.13, 28), ouro); c.position.set(2.4 + (i % 2 ? 0.03 : -0.03), 0.21 + i * 0.145, 0.3); g.add(c); pilha.push(c); }
+  const hit = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 4.4, 16), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.set(0.5, 2.2, 0); hit.userData.id = 'chefe'; g.add(hit);
+  chefao = { grupo: g, corpo, partes, pilha, base, hit, x, z, mostradas: 12 };
+  scene.add(g);
+}
+function animarChefao(s, dt, w, h) {
+  const c = chefao; if (!c) return;
+  const st = situacaoChefe(), u = c.partes, bravo = st.nivel === 'crit';
+  u.sobr.forEach(sb => { sb.rotation.z = bravo ? sb.userData.lado * 0.55 : st.nivel === 'warn' ? -sb.userData.lado * 0.4 : 0; });
+  u.boca.rotation.z = st.nivel === 'ok' ? Math.PI : 0; u.boca.scale.y = st.nivel === 'warn' ? 0.25 : 1; u.boca.position.y = u.bocaY + (st.nivel === 'ok' ? 0.07 : 0);
+  u.mat.emissive.copy(corTema.crit); u.mat.emissiveIntensity = bravo ? 0.3 + 0.25 * Math.sin(s * 8) : 0;
+  c.corpo.position.y = reduzMovimento ? 0 : bravo ? Math.abs(Math.sin(s * 8)) * 0.12 : Math.max(0, Math.sin(s * 1.8)) * 0.05;
+  c.corpo.rotation.y = Math.atan2(camera.position.x - c.x, camera.position.z - c.z) * 0.6;
+  const alvo = st.renda > 0 ? Math.ceil(st.f * 12) : 0;                       // moedas somem aos poucos
+  c.mostradas += Math.sign(alvo - c.mostradas) * Math.min(Math.abs(alvo - c.mostradas), dt * 10);
+  c.pilha.forEach((m, i) => { m.visible = i < Math.round(c.mostradas); });
+  if (c.rotulo) {
+    tmp.set(c.x, 4.9, c.z).project(camera);
+    c.rotulo.style.visibility = tmp.z > 1 ? 'hidden' : 'visible';
+    c.rotulo.style.transform = `translate(-50%,-100%) translate(${((tmp.x * 0.5 + 0.5) * w).toFixed(1)}px,${((-tmp.y * 0.5 + 0.5) * h).toFixed(1)}px)`;
+    c.rotulo.style.zIndex = String(Math.round((1 - tmp.z) * 10000));
+  }
+  for (let i = moedasVoo.length - 1; i >= 0; i--) {                            // dia de pagamento: moedas voam até cada categoria
+    const v = moedasVoo[i]; v.t += dt / 1.1;
+    if (v.t >= 1) { scene.remove(v.m); moedasVoo.splice(i, 1); continue; }
+    if (v.t > 0) { v.m.visible = true; v.m.position.lerpVectors(v.de, v.para, v.t); v.m.position.y += Math.sin(v.t * Math.PI) * 4; v.m.rotation.x += dt * 10; }
+  }
+}
+function diaDePagamento() {
+  if (!chefao) return;
+  balao('chefe', 'Dia de pagamento!', true); setTimeout(() => tiraBalao('chefe'), 2600); bip('nivel');
+  if (reduzMovimento) return;
+  let i = 0;
+  tanques.forEach(t => { for (let k = 0; k < 3; k++) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.07, 20), chefao.pilha[0].material); m.visible = false; scene.add(m);
+    moedasVoo.push({ m, t: -(i++) * 0.07, de: new THREE.Vector3(chefao.x + 2.4, 2, chefao.z + 0.3), para: new THREE.Vector3(t.x, t.h * 0.6, t.z) });
+  } });
+}
 // Monumento da meta: o objeto do sonho, que se enche de ouro conforme o dinheiro guardado
 let monumento = null, metaInfo = null;
 function montarMeta(x, z) {
@@ -663,6 +740,7 @@ function montarCena() {
     tr.scale.setScalar(1.4); tr.position.set(Math.cos(at) * Rt, 0, Math.sin(at) * Rt); decor.add(tr);
   }
   montarMeta(n <= 1 ? -(maiorRad + 4) : 0, 0);
+  montarChefao(-1, -(raio + maiorRad + 3));
   orbita.raioPadrao = raio * 2 + 10;
   aplicarTema();
   montarRotulos();
@@ -770,9 +848,9 @@ const baloes = new Map(), brigando = [], centroBriga = new THREE.Vector3();
 const sorteia = l => l[Math.floor(Math.random() * l.length)];
 function balao(id, texto, grito) {
   tiraBalao(id);
-  const t = tanques.get(id); if (!t) return;
+  const t = tanques.get(id); if (!t && id !== 'chefe') return;
   const el = document.createElement('div'); el.className = 'balao' + (grito ? ' grito' : '');
-  el.innerHTML = (grito ? '' : `<b>${esc(t.cat.nome)}</b>`) + esc(texto);
+  el.innerHTML = (grito ? '' : `<b>${id === 'chefe' ? 'Chefão' : esc(t.cat.nome)}</b>`) + esc(texto);
   $('baloes').append(el); baloes.set(id, el);
 }
 function tiraBalao(id) { const el = baloes.get(id); if (el) { el.remove(); baloes.delete(id); } }
@@ -787,6 +865,19 @@ function planejarCena() {
   if (lst.length < 2) return null;
   const P = [], fala = (quem, texto, com) => P.push({ tipo: 'fala', quem, texto, com, dur: 1.9 + texto.length * 0.045 });
   const pct = x => Math.round(x.st.r * 100);
+  const ch = situacaoChefe();
+  if (chefao && ch.renda > 0 && Math.random() < 0.35) {   // cena com o Chefão: ele cobra quem estourou ou comenta a renda
+    const frente = new THREE.Vector3(chefao.x + 0.4, 0, chefao.z + 2.6), estourou = lst.filter(x => x.st.nivel === 'crit');
+    const X = estourou.length ? sorteia(estourou) : sorteia(lst);
+    P.push({ tipo: 'andar', quem: X.id, para: frente });
+    if (ch.resto <= 0) { fala('chefe', `Acabou! Vocês gastaram ${brl0.format(-ch.resto)} a mais do que eu trouxe este mês.`); fala(X.id, 'A gente vai ter que apertar o cinto…', 'chefe'); }
+    else if (estourou.length) {
+      fala('chefe', `${X.cat.nome}, você já levou ${pct(X)}% do que eu te dei!`); fala(X.id, sorteia(['Desculpa, chefe…', 'Foi só dessa vez!', 'Prometo compensar.']), 'chefe');
+      fala('chefe', sorteia(['Eu trago o dinheiro, vocês cuidam dele.', `Só restam ${brl0.format(ch.resto)} até o fim do mês.`]));
+    } else if (ch.limites > ch.renda) { fala('chefe', `Os limites de vocês somam ${brl0.format(ch.limites)}, mas eu só trago ${brl0.format(ch.renda)}.`); fala(X.id, 'Alguém vai ter que encolher…', 'chefe'); }
+    else { fala('chefe', `Bom trabalho, equipe. Ainda restam ${brl0.format(ch.resto)} este mês.`); fala(X.id, sorteia(['Valeu, chefe!', 'Pode deixar com a gente.']), 'chefe'); }
+    P.push({ tipo: 'casa', quem: [X.id] }); return P;
+  }
   const ruins = lst.filter(x => x.st.nivel !== 'ok');
   let B = alunoForcado && ruins.find(x => x.id === alunoForcado); alunoForcado = null;
   if (!B && ruins.length) B = sorteia(ruins.filter(x => x.st.nivel === 'crit').concat(ruins));
@@ -829,6 +920,7 @@ function planejarCena() {
 function iniciarPasso(p) {
   const t = tanques.get(p.quem);
   if (p.tipo === 'andar' && t) t.dest.copy(p.para);
+  if (p.tipo === 'fala' && p.quem === 'chefe') balao('chefe', p.texto);
   if (p.tipo === 'fala' && t) { balao(p.quem, p.texto); t.olhar = p.com; const o = tanques.get(p.com); if (o) o.olhar = p.quem; }
   if (p.tipo === 'briga') {
     const a = tanques.get(p.a), b = tanques.get(p.b);
@@ -887,7 +979,7 @@ function animarBonecos(s, dt, w, h) {
         b.position.y = reduzMovimento ? 0 : Math.abs(Math.sin(s * 11 + t.fase)) * 0.16; rot = Math.atan2(dx, dz);
       } else {
         b.position.y = reduzMovimento ? 0 : (st.nivel === 'crit' ? Math.abs(Math.sin(s * 9 + t.fase)) * 0.07 : Math.max(0, Math.sin(s * 2.2 + t.fase)) * 0.03);
-        const o = t.olhar && tanques.get(t.olhar), alvo = o ? o.boneco.position : camera.position;
+        const o = t.olhar && tanques.get(t.olhar), alvo = o ? o.boneco.position : t.olhar === 'chefe' && chefao ? chefao.grupo.position : camera.position;
         rot = Math.atan2(alvo.x - b.position.x, alvo.z - b.position.z);
       }
       b.rotation.y += Math.atan2(Math.sin(rot - b.rotation.y), Math.cos(rot - b.rotation.y)) * (1 - Math.exp(-dt * 10));
@@ -906,8 +998,9 @@ function animarBonecos(s, dt, w, h) {
     p.needsUpdate = true;
   }
   baloes.forEach((el, id) => {
-    const t = tanques.get(id); if (!t) return;
-    tmp.set(t.boneco.position.x, t.boneco.position.y + 1.75, t.boneco.position.z).project(camera);
+    const t = tanques.get(id); if (!t && !(id === 'chefe' && chefao)) return;
+    if (t) tmp.set(t.boneco.position.x, t.boneco.position.y + 1.75, t.boneco.position.z); else tmp.set(chefao.x, 6.9, chefao.z);
+    tmp.project(camera);
     el.style.visibility = tmp.z > 1 ? 'hidden' : 'visible';
     const x = Math.min(w - 120, Math.max(120, (tmp.x * 0.5 + 0.5) * w));
     el.style.transform = `translate(-50%,-100%) translate(${x.toFixed(1)}px,${((-tmp.y * 0.5 + 0.5) * h - 8).toFixed(1)}px)`;
@@ -920,6 +1013,7 @@ function focar() {
   const t = tanques.get(selecionada), longe = orbita.raioPadrao * (app.clientWidth <= 760 ? 1.7 : 1);
   if (t) { orbita.alvoDesejado.set(t.x, t.h * 0.55, t.z); orbita.raioAlvo = Math.min(longe, (6 + t.h + t.rad * 2) * (app.clientWidth <= 760 ? 1.9 : 1));
     orbita.tetaAlvo = tanques.size > 1 ? Math.atan2(t.z, t.x) : null; }
+  else if (selecionada === 'chefe' && chefao) { orbita.alvoDesejado.set(chefao.x, 1.8, chefao.z); orbita.raioAlvo = longe * 0.8; orbita.tetaAlvo = Math.PI / 2; }
   else if (selecionada === 'meta' && monumento) { orbita.alvoDesejado.set(monumento.x, 1.5, monumento.z); orbita.raioAlvo = longe * 0.8; orbita.tetaAlvo = null; }
   else { orbita.alvoDesejado.set(0, 1.6, 0); orbita.raioAlvo = longe; orbita.tetaAlvo = null; }
 }
@@ -930,7 +1024,7 @@ function tanqueEm(ev) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   raio.setFromCamera(ndc, camera);
-  const hit = raio.intersectObjects([...tanques.values()].flatMap(t => [t.vidro, t.boneco.userData.corpo]).concat(monumento ? [monumento.hit] : []))[0];
+  const hit = raio.intersectObjects([...tanques.values()].flatMap(t => [t.vidro, t.boneco.userData.corpo]).concat(monumento ? [monumento.hit] : [], chefao ? [chefao.hit] : []))[0];
   return hit ? hit.object.userData.id : null;
 }
 canvas.addEventListener('pointerdown', ev => { canvas.setPointerCapture(ev.pointerId); ponteiros.set(ev.pointerId, { x: ev.clientX, y: ev.clientY }); arrasto = 0; pinca = 0; });
@@ -1030,7 +1124,7 @@ function quadro(agora) {
     const c = moedas[i]; c.v += 22 * dt; c.m.position.y -= c.v * dt; c.m.rotation.z += dt * 12;
     if (c.m.position.y <= c.chao) { scene.remove(c.m); moedas.splice(i, 1); }
   }
-  agoraS = s; tickCena(s); animarBonecos(s, dt, w, h); animarConfete(s, dt); animarMeta(s, dt, w, h);
+  agoraS = s; tickCena(s); animarBonecos(s, dt, w, h); animarConfete(s, dt); animarMeta(s, dt, w, h); animarChefao(s, dt, w, h);
   renderer.render(scene, camera);
   requestAnimationFrame(quadro);
 }
@@ -1043,6 +1137,7 @@ function montarRotulos() {
     b.type = 'button'; b.onclick = () => selecionar(id);
     cx.append(b); t.rotulo = b;
   });
+  if (chefao) { const b = document.createElement('button'); b.type = 'button'; b.onclick = () => selecionar('chefe'); cx.append(b); chefao.rotulo = b; }
   if (monumento) { const b = document.createElement('button'); b.type = 'button'; b.onclick = () => selecionar('meta'); cx.append(b); monumento.rotulo = b; }
   atualizar();
 }
@@ -1056,9 +1151,18 @@ function atualizar() {
     t.rotulo.className = `rotulo ${st.nivel}${id === selecionada ? ' sel' : ''}`;
     t.rotulo.innerHTML = `<b>${esc(t.cat.nome)}</b><span class="num">${brl0.format(st.gasto)} de ${brl0.format(t.cat.limite)} · ${Math.round(st.r * 100)}%</span>${st.nivel === 'ok' ? '' : `<em>${st.curto}</em>`}`;
   });
+  const ch = situacaoChefe();
+  if (chefao && chefao.rotulo) {
+    chefao.rotulo.className = `rotulo chefe ${ch.nivel}${selecionada === 'chefe' ? ' sel' : ''}`;
+    chefao.rotulo.innerHTML = ch.renda <= 0 ? '<b>Chefão</b><span>Clique para informar quanto entra por mês</span>'
+      : `<b>Chefão</b><span class="num">${ch.resto >= 0 ? `Restam ${brl0.format(ch.resto)} de ${brl0.format(ch.renda)}` : `Faltam ${brl0.format(-ch.resto)} este mês`}</span><div class="barra"><div style="width:${ch.f * 100}%;background:var(--${ch.nivel === 'ok' ? 'ouro' : ch.nivel})"></div></div>${ch.nivel === 'crit' ? '<em>O dinheiro do mês acabou</em>' : ''}`;
+  }
+  if (ch.nivel === 'crit') cont.crit++;
   $('total').innerHTML = `${brl.format(total)} <span>de ${brl.format(limite)}</span>`;
   const chips = [];
-  if (cont.crit) chips.push(`<span class="chip crit">${cont.crit} ${cont.crit > 1 ? 'estouradas' : 'estourada'}</span>`);
+  const nEst = cont.crit - (ch.nivel === 'crit' ? 1 : 0);
+  if (nEst) chips.push(`<span class="chip crit">${nEst} ${nEst > 1 ? 'estouradas' : 'estourada'}</span>`);
+  if (ch.nivel === 'crit') chips.unshift('<span class="chip crit">Gastou mais do que entrou</span>');
   if (cont.warn) chips.push(`<span class="chip warn">${cont.warn} perto do limite</span>`);
   if (!chips.length && tanques.size) chips.push('<span class="chip ok">Tudo dentro do limite</span>');
   $('chips').innerHTML = chips.join('');
@@ -1096,7 +1200,39 @@ function desenharPainel(erro = '') {
   const idAntes = p.dataset.id;
   p.hidden = false; p.dataset.id = selecionada;
 
-  if (selecionada === 'meta') {
+  if (selecionada === 'chefe') {
+    const ch = situacaoChefe(), extras = entradasDe(mes).sort((a, b) => b.data.localeCompare(a.data)), folga = ch.renda - ch.limites;
+    const dataPadrao = mes === hoje().slice(0, 7) ? hoje() : mes + '-01';
+    p.innerHTML = `
+      <div class="cab"><i style="background:var(--ouro)"></i><h2>Chefão</h2><button type="button" class="fechar" data-acao="fechar" aria-label="Fechar">×</button></div>
+      <div class="corpo">
+        ${ch.renda > 0 ? `<div class="situacao ${ch.nivel}">
+          <div class="valor num">${brl.format(Math.max(0, ch.resto))} <span>restam de ${brl.format(ch.renda)}</span></div>
+          <div class="barra"><div style="width:${ch.f * 100}%;background:var(--${ch.nivel === 'ok' ? 'ouro' : ch.nivel})"></div></div>
+          <p>${ch.resto < 0 ? `Você gastou ${brl.format(-ch.resto)} a mais do que entrou` : ch.nivel === 'warn' ? 'Menos de 20% da renda do mês sobrando' : `Já saíram ${brl.format(ch.gasto)} neste mês`}</p>
+        </div>
+        <ul class="jogo-lista">
+          <li><div>Limites das categorias<small>Soma de tudo o que as categorias podem gastar</small></div><span class="st forte num">${brl0.format(ch.limites)}</span></li>
+          <li><div>${folga >= 0 ? 'Sobra planejada' : 'Limites acima da renda'}<small>${folga >= 0 ? 'Renda menos limites: é o que vai para a meta se todos se comportarem' : 'Reduza limites ou a conta não fecha'}</small></div><span class="st forte num">${brl0.format(Math.abs(folga))}</span></li>
+        </ul>` : '<p class="vazio">O Chefão é quem traz o dinheiro. Informe quanto entra por mês para ver quanto ainda resta, e para a meta ser calculada pela sua renda de verdade.</p>'}
+        <form id="f-renda" novalidate>
+          <h3>Renda mensal fixa</h3>
+          <label>Salário e outras entradas fixas (R$)<input type="text" id="r-mensal" inputmode="decimal" placeholder="0,00" value="${estado.renda ? estado.renda.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}" autocomplete="off"></label>
+          <button type="submit" class="btn primario bloco">Salvar renda</button>
+        </form>
+        <form id="f-entrada" novalidate>
+          <h3>Entrada extra</h3>
+          <div class="campos">
+            <label>Valor (R$)<input type="text" id="e-valor" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+            <label>Data<input type="date" id="e-data" value="${dataPadrao}"></label>
+            <label class="largo">Descrição<input type="text" id="e-desc" maxlength="40" placeholder="Ex.: 13º, bônus, freela" autocomplete="off"></label>
+          </div>
+          ${erro ? `<p class="erro">${esc(erro)}</p>` : ''}
+          <button type="submit" class="btn bloco">Adicionar entrada</button>
+        </form>
+        ${extras.length ? `<div><h3>Entradas extras do mês</h3><ul class="lista">${extras.map(e => `<li><div>${esc(e.desc || 'Sem descrição')}<small>${e.data.slice(8)}/${e.data.slice(5, 7)}</small></div><span class="num">${brl.format(e.valor)}</span><button type="button" class="x" data-acao="remover-entrada" data-id="${e.id}" aria-label="Remover ${esc(e.desc || 'entrada')}">×</button></li>`).join('')}</ul></div>` : ''}
+      </div>`;
+  } else if (selecionada === 'meta') {
     const m = estado.meta, mi = metaInfo;
     if (!m) {
       p.innerHTML = `
@@ -1117,7 +1253,7 @@ function desenharPainel(erro = '') {
           </div>
           ${mi.alcancada ? '<button type="button" class="btn primario bloco" data-acao="meta-concluir">Concluir e escolher nova meta</button>' : `
           <ul class="jogo-lista">
-            <li><div>Em jogo neste mês<small>Limites menos gastos. Só entra no cofre se você lançar gastos em pelo menos ${DIAS_MIN} dias do mês (até agora: ${mi.dias}).</small></div><span class="st forte num">${brl0.format(mi.previsto)}</span></li>
+            <li><div>Em jogo neste mês<small>${rendaDe(hoje().slice(0, 7)) > 0 ? 'Renda' : 'Limites'} menos gastos. Só entra no cofre se você lançar gastos em pelo menos ${DIAS_MIN} dias do mês (até agora: ${mi.dias}).</small></div><span class="st forte num">${brl0.format(mi.previsto)}</span></li>
             <li><div>Precisa sobrar por mês<small>Para alcançar em ${mi.mesesRest} ${mi.mesesRest > 1 ? 'meses' : 'mês'}</small></div><span class="st forte num">${brl0.format(mi.porMesNec)}</span></li>
             <li><div>Teto de gasto por dia<small>Somando tudo, até o fim do mês (${mi.diasRest} ${mi.diasRest > 1 ? 'dias' : 'dia'}), para ficar no ritmo</small></div><span class="st forte num">${mi.tetoDia > 0 ? brl0.format(mi.tetoDia) : 'Sem folga'}</span></li>
             ${mi.fora ? `<li><div>${mi.fora} ${mi.fora > 1 ? 'meses não contaram' : 'mês não contou'}<small>Menos de ${DIAS_MIN} dias com gastos lançados</small></div><span class="st">Fora do cofre</span></li>` : ''}
@@ -1215,6 +1351,7 @@ $('painel').addEventListener('click', ev => {
   const acao = b.dataset.acao;
   if (acao === 'fechar') selecionar(null);
   if (acao === 'remover') { estado.gastos = estado.gastos.filter(g => g.id !== b.dataset.id); salvar(); atualizar(); }
+  if (acao === 'remover-entrada') { estado.entradas = (estado.entradas || []).filter(e => e.id !== b.dataset.id); salvar(); atualizar(); }
   if (acao === 'meta-concluir' || acao === 'meta-excluir') {
     if (acao === 'meta-excluir' && !confirmarExclusao) { confirmarExclusao = true; desenharPainel(); return; }
     const m = estado.meta;   // o que já foi usado numa meta concluída não conta de novo na próxima
@@ -1248,6 +1385,21 @@ $('painel').addEventListener('submit', ev => {
     if (st.nivel === 'crit') { aviso(`${cat.nome}: ${st.texto[0].toLowerCase() + st.texto.slice(1)}.`, 'crit'); bip('crit'); }
     else if (st.nivel === 'warn') { aviso(`Atenção, ${cat.nome} chegou a ${Math.round(st.r * 100)}% do limite. Restam ${brl.format(cat.limite - st.gasto)}.`, 'warn'); if (antes !== 'warn') bip('warn'); }
     pontuarGasto();
+  }
+  if (f === 'f-renda') {
+    const v = lerValor($('r-mensal').value || '0');
+    if (!(v >= 0)) { aviso('Informe a renda em reais, por exemplo 3.500,00.', 'warn'); return; }
+    estado.renda = v; if (v > 0) J().temRenda = true;
+    salvar(); atualizar(); if (v > 0) diaDePagamento(); fecharGanhos();
+    aviso(v > 0 ? `Renda mensal salva: ${brl.format(v)}.` : 'Renda mensal removida.');
+  }
+  if (f === 'f-entrada') {
+    const v = lerValor($('e-valor').value), data = $('e-data').value || hoje();
+    if (!(v > 0)) { desenharPainel('Informe um valor maior que zero, por exemplo 800,00.'); $('e-valor').focus(); return; }
+    (estado.entradas = estado.entradas || []).push({ id: novoId(), valor: v, desc: $('e-desc').value.trim(), data });
+    mes = data.slice(0, 7); J().temRenda = true; salvar();
+    $('e-valor').value = ''; $('e-desc').value = '';
+    atualizar(); diaDePagamento(); fecharGanhos();
   }
   if (f === 'f-meta') {
     const nome = $('m-nome').value.trim(), valor = lerValor($('m-valor').value), prazo = Math.round(Number($('m-prazo').value));
