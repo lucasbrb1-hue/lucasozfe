@@ -1,15 +1,21 @@
 # Gastos em 3D
 
-Controle financeiro pessoal em um ambiente 3D. Cada categoria de gasto (casa,
-comida, transporte...) é um reservatório de vidro cuja altura representa o
-limite mensal; o líquido sobe a cada gasto lançado.
+Controle financeiro pessoal em um ambiente 3D. Cada categoria de gasto aparece
+como o próprio objeto do gasto (uma casa, um carro, um hambúrguer...). O objeto
+inteiro representa o limite mensal e vai se enchendo de cor, de baixo para
+cima, a cada gasto lançado.
+
+O formato é escolhido pelo nome da categoria (por exemplo "Aluguel" vira casa,
+"Combustível" vira carro, "Mercado" vira comida) e pode ser trocado em
+"Limite e alerta" > "Formato". Formatos: casa, carro, comida, lazer (pipoca),
+saúde (maleta), educação (livros) e moedas (para o que não se encaixa).
 
 ## Como usar
 
 Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 
 - **Girar / aproximar**: arraste a cena; use a roda do mouse ou o gesto de pinça.
-- **Lançar gasto**: clique em um reservatório (ou no rótulo dele), informe o
+- **Lançar gasto**: clique em um objeto (ou no rótulo dele), informe o
   valor, a data e a descrição.
 - **Limite e alerta**: no painel da categoria, abra "Limite e alerta" para
   definir o limite mensal e em que porcentagem o aviso dispara (padrão 80%).
@@ -21,11 +27,11 @@ Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 | Situação | O que acontece |
 | --- | --- |
 | Perto do limite (>= % de alerta) | anel âmbar pulsando, borda da tela âmbar, aviso e som |
-| Limite atingido ou estourado | líquido vermelho transbordando, reservatório tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
+| Limite atingido ou estourado | objeto vermelho transbordando e tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
 
 ## Personagens
 
-Cada categoria tem um personagem ao lado do seu reservatório, com humor
+Cada categoria tem um personagem (uma miniatura do objeto, com rosto), com humor
 conforme a situação (tranquilo, preocupado ou bravo). De tempos em tempos — e
 logo depois de um gasto que acende um alerta — eles interagem:
 

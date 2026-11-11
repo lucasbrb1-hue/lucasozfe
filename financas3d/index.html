@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: a cena 3D ocupa a tela inteira; barra de resumo no topo, painel da categoria
-   flutuando à direita (vira folha inferior no celular), rótulos presos aos reservatórios. */
+   flutuando à direita (vira folha inferior no celular), rótulos presos aos objetos. */
 :root {
   --bg: #e9eef3;          /* céu da cena */
   --floor: #d5dde6;       /* piso */
@@ -97,7 +97,7 @@ button { cursor: pointer; }
 .btn.perigo { color: var(--crit); }
 .btn.bloco { width: 100%; }
 
-/* Rótulos presos aos reservatórios */
+/* Rótulos presos aos objetos */
 .rotulo {
   position: absolute; left: 0; top: 0; pointer-events: auto; text-align: center; white-space: nowrap;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 5px 10px 6px;
@@ -138,7 +138,7 @@ form { display: flex; flex-direction: column; gap: 10px; }
 .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .campos .largo { grid-column: 1 / -1; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
-input[type="text"], input[type="date"] {
+input[type="text"], input[type="date"], select {
   width: 100%; min-width: 0; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font-size: 15px;
 }
 input[type="range"] { width: 100%; accent-color: var(--warn); }
@@ -199,7 +199,7 @@ details form { padding-top: 8px; }
 </style>
 
 <div id="app">
-  <canvas id="cena" aria-label="Cena 3D com um reservatório para cada categoria de gasto"></canvas>
+  <canvas id="cena" aria-label="Cena 3D com um objeto para cada categoria de gasto"></canvas>
   <div id="vinheta"></div>
   <div id="labels"></div>
   <div id="baloes" aria-live="off"></div>
@@ -228,7 +228,7 @@ details form { padding-top: 8px; }
       <span>Estes são dados de exemplo.</span>
       <button type="button" class="btn" id="zerar">Começar do zero</button>
     </div>
-    <p class="dica">Arraste para girar · role para aproximar · clique em um reservatório para lançar um gasto · os personagens conversam sozinhos</p>
+    <p class="dica">Arraste para girar · role para aproximar · clique em um objeto para lançar um gasto · os personagens conversam sozinhos</p>
   </div>
 </div>
 
@@ -325,6 +325,7 @@ function aviso(msg, nivel = '') {
 /* ---------- Cena 3D ---------- */
 const canvas = $('cena'), app = $('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.localClippingEnabled = true;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xffffff, 22, 60);
@@ -345,13 +346,12 @@ function aplicarTema() {
   if (grade) { scene.remove(grade); grade.geometry.dispose(); }
   grade = new THREE.GridHelper(60, 60, v('--grid'), v('--grid')); grade.position.y = 0.01; scene.add(grade);
   for (const k of ['ok', 'warn', 'crit', 'glass', 'fg']) corTema[k].set(v('--' + k));
-  tanques.forEach(t => { t.vidro.material.color.copy(corTema.glass); t.aroAlerta.material.color.copy(corTema.warn); t.base.material.color.set(v('--surface-2')); });
+  tanques.forEach(t => { t.matFantasma.color.copy(corTema.glass); t.aroAlerta.material.color.copy(corTema.warn); t.base.material.color.set(v('--surface-2')); });
 }
 
 const tanques = new Map();   // id -> objetos 3D e estado da animação
 const moedas = [];
 const reduzMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const geoLiquido = new THREE.CylinderGeometry(0.6, 0.6, 1, 40).translate(0, 0.5, 0);
 const N_GOTAS = 70;
 
 function montarCena() {
@@ -359,38 +359,46 @@ function montarCena() {
   cancelarCena();
   tanques.forEach(t => { scene.remove(t.grupo); scene.remove(t.boneco); });
   tanques.clear();
-  const n = estado.categorias.length, raio = n <= 1 ? 0 : Math.max(3, n * 0.95);
+  const n = estado.categorias.length, raio = n <= 1 ? 0 : Math.max(3.6, n * 1.1);
   const maior = Math.max(1, ...estado.categorias.map(c => c.limite));
   estado.categorias.forEach((cat, i) => {
     const ang = Math.PI / 2 + (i / n) * Math.PI * 2;
-    const h = 1.6 + 3.2 * (cat.limite / maior);
+    const forma = formaDe(cat), escala = 1.7 + 0.9 * (cat.limite / maior);
     const grupo = new THREE.Group();
     grupo.position.set(Math.cos(ang) * raio, 0, Math.sin(ang) * raio);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.88, 0.95, 0.14, 40), new THREE.MeshStandardMaterial({ roughness: 0.6 }));
+    // o objeto aparece duas vezes: um "fantasma" translúcido inteiro e uma cópia colorida cortada na altura do gasto
+    const plano = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0.14);
+    const matCheio = new THREE.MeshStandardMaterial({ color: cat.cor, roughness: 0.35, emissive: cat.cor, emissiveIntensity: 0.12, clippingPlanes: [plano], side: THREE.DoubleSide });
+    const matFantasma = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.3, roughness: 0.2, depthWrite: false });
+    const cheio = construirForma(forma, matCheio, 0), fantasma = construirForma(forma, matFantasma, 1);
+    const dim = new THREE.Box3().setFromObject(cheio).getSize(new THREE.Vector3());
+    const h = dim.y * escala, rad = Math.max(dim.x, dim.z) / 2 * escala;
+    cheio.scale.setScalar(escala); fantasma.scale.setScalar(escala * 1.012);
+    const modelo = new THREE.Group(); modelo.add(cheio, fantasma); modelo.position.y = 0.14;
+    modelo.rotation.y = Math.atan2(Math.cos(ang), Math.sin(ang)) + 0.5;   // frente para fora da roda, levemente de lado
+    fantasma.traverse(o => { o.renderOrder = 2; });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(rad + 0.2, rad + 0.28, 0.14, 48), new THREE.MeshStandardMaterial({ roughness: 0.6 }));
     base.position.y = 0.07;
-    const liquido = new THREE.Mesh(geoLiquido, new THREE.MeshStandardMaterial({ color: cat.cor, roughness: 0.25, emissive: cat.cor, emissiveIntensity: 0.12 }));
-    liquido.position.y = 0.14;
-    const vidro = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, h, 40, 1, true),
-      new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide, depthWrite: false }));
-    vidro.position.y = 0.14 + h / 2; vidro.userData.id = cat.id; vidro.renderOrder = 2;
-    const aroTopo = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.035, 10, 48), new THREE.MeshStandardMaterial({ roughness: 0.4 }));
-    aroTopo.rotation.x = Math.PI / 2; aroTopo.position.y = 0.14 + h;
-    const aroAlerta = new THREE.Mesh(new THREE.TorusGeometry(0.71, 0.018, 8, 48), new THREE.MeshBasicMaterial());
+    const vidro = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, h, 16), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    vidro.position.y = 0.14 + h / 2; vidro.userData.id = cat.id;   // área clicável
+    const aroTopo = new THREE.Mesh(new THREE.TorusGeometry(rad * 1.08, 0.035, 10, 64), new THREE.MeshStandardMaterial({ roughness: 0.4 }));
+    aroTopo.visible = false;   // o topo do próprio objeto já marca o limite
+    const aroAlerta = new THREE.Mesh(new THREE.TorusGeometry(rad * 1.06, 0.016, 8, 64), new THREE.MeshBasicMaterial());
     aroAlerta.rotation.x = Math.PI / 2; aroAlerta.position.y = 0.14 + h * cat.alerta;
-    const aroEstado = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.05, 10, 56), new THREE.MeshBasicMaterial());
+    const aroEstado = new THREE.Mesh(new THREE.TorusGeometry(rad + 0.42, 0.05, 10, 64), new THREE.MeshBasicMaterial());
     aroEstado.rotation.x = Math.PI / 2; aroEstado.position.y = 0.06;
-    const poca = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55 }));
+    const poca = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55 }));
     poca.rotation.x = -Math.PI / 2; poca.position.y = 0.03; poca.visible = false;
     const pos = new Float32Array(N_GOTAS * 3);
     const gotas = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3)),
       new THREE.PointsMaterial({ size: 0.09, transparent: true, opacity: 0.9 }));
     gotas.visible = false; gotas.frustumCulled = false;
-    grupo.add(base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas);
+    grupo.add(base, modelo, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas);
     scene.add(grupo);
-    const rb = Math.max(1.7, raio - 1.9);
+    const rb = n <= 1 ? rad + 1.4 : Math.max(1.7, raio - rad - 1.2);
     const casa = new THREE.Vector3(Math.cos(ang) * rb, 0, Math.sin(ang) * rb);
     const boneco = criarBoneco(cat); boneco.position.copy(casa); boneco.scale.setScalar(1.5); scene.add(boneco);
-    tanques.set(cat.id, { cat, grupo, base, liquido, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas, h, nivel: niveis.get(cat.id) || 0, boneco, casa, dest: casa.clone(), olhar: null,
+    tanques.set(cat.id, { cat, grupo, base, plano, matCheio, matFantasma, rad, vidro, aroTopo, aroAlerta, aroEstado, poca, gotas, h, nivel: niveis.get(cat.id) || 0, boneco, casa, dest: casa.clone(), olhar: null,
       x: grupo.position.x, z: grupo.position.z, corBase: new THREE.Color(cat.cor), fase: Math.random() * 10 });
   });
   orbita.raioPadrao = raio * 2 + 10;
@@ -400,19 +408,74 @@ function montarCena() {
 
 /* ---------- Personagens: cada categoria tem um boneco que conversa, ensina e briga ---------- */
 const matOlho = new THREE.MeshBasicMaterial({ color: 0xffffff }), matPreto = new THREE.MeshBasicMaterial({ color: 0x141a22 });
-function criarBoneco(cat) {
+const matDetalhe = new THREE.MeshStandardMaterial({ color: 0x2a323d, roughness: 0.7 }), matClaro = new THREE.MeshStandardMaterial({ color: 0xfff6dc, roughness: 0.6 });
+const FORMAS = { casa: 'Casa', carro: 'Carro', comida: 'Comida', lazer: 'Lazer (pipoca)', saude: 'Saúde (maleta)', educacao: 'Educação (livros)', moedas: 'Moedas' };
+const PISTAS = [
+  ['casa', /casa|aluguel|morad|condom|apart|imovel|iptu|\blar\b/],
+  ['carro', /carro|transp|combust|gasolin|uber|veicul|\bauto|moto|onibus|estacion|pedagio/],
+  ['comida', /comida|aliment|mercado|restaur|feira|lanche|ifood|padaria|almoco|janta/],
+  ['lazer', /lazer|divers|cinema|jogo|game|stream|passeio|viagem|festa/],
+  ['saude', /saude|farmac|medic|remedio|plano|dentist|academia/],
+  ['educacao', /educa|escola|curso|faculd|livro|estud/],
+];
+// O formato vem da escolha do usuário ou, no automático, do nome da categoria.
+function formaDe(cat) {
+  if (FORMAS[cat.forma]) return cat.forma;
+  const nome = cat.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const achou = PISTAS.find(([, re]) => re.test(nome));
+  return achou ? achou[0] : 'moedas';
+}
+// Onde fica o rosto do personagem em cada formato (y, z dos olhos, z da boca), em unidades do modelo.
+const ROSTO = { casa: [0.27, 0.4, 0.4], carro: [0.37, 0.65, 0.65], comida: [0.6, 0.44, 0.57], lazer: [0.36, 0.38, 0.35], saude: [0.33, 0.21, 0.21], educacao: [0.3, 0.37, 0.37], moedas: [0.33, 0.45, 0.45] };
+// det: 0 = só o corpo; 1 = corpo + todos os detalhes; 2 = corpo + detalhes que não ficam na frente (para caber o rosto)
+function construirForma(tipo, mat, det) {
   const g = new THREE.Group();
-  const corpo = new THREE.Mesh(new THREE.SphereGeometry(0.42, 28, 20), new THREE.MeshStandardMaterial({ color: cat.cor, roughness: 0.55 }));
-  corpo.scale.y = 1.15; corpo.position.y = 0.55; corpo.userData.id = cat.id; g.add(corpo);
-  const partes = { corpo, sobr: [] };
-  for (const lado of [-1, 1]) {
-    const olho = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), matOlho); olho.position.set(lado * 0.15, 0.68, 0.33);
-    const pupila = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), matPreto); pupila.position.set(lado * 0.155, 0.68, 0.425);
-    const sob = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.045, 0.04), matPreto); sob.position.set(lado * 0.15, 0.85, 0.36); sob.userData.lado = lado;
-    const pe = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), corpo.material); pe.scale.set(1, 0.6, 1.3); pe.position.set(lado * 0.2, 0.08, 0.05);
-    g.add(olho, pupila, sob, pe); partes.sobr.push(sob);
+  const M = (geo, x, y, z, m) => { const o = new THREE.Mesh(geo, m || mat); o.position.set(x, y, z); g.add(o); return o; };
+  const box = (a, b, c) => new THREE.BoxGeometry(a, b, c), cil = (rt, rb, hh) => new THREE.CylinderGeometry(rt, rb, hh, 28);
+  if (tipo === 'casa') {
+    M(box(1, 0.55, 0.8), 0, 0.275, 0);
+    M(new THREE.ConeGeometry(0.82, 0.45, 4), 0, 0.775, 0).rotation.y = Math.PI / 4;
+    M(box(0.13, 0.3, 0.13), 0.28, 0.82, -0.1);
+    if (det === 1) { M(box(0.2, 0.34, 0.03), -0.22, 0.17, 0.405, matDetalhe); M(box(0.22, 0.2, 0.03), 0.22, 0.32, 0.405, matClaro); }
+  } else if (tipo === 'carro') {
+    M(box(0.62, 0.3, 1.3), 0, 0.33, 0); M(box(0.56, 0.27, 0.68), 0, 0.61, -0.08);
+    if (det) for (const x of [-0.33, 0.33]) for (const z of [-0.4, 0.4]) M(cil(0.17, 0.17, 0.1), x, 0.17, z, matDetalhe).rotation.z = Math.PI / 2;
+    if (det === 1) for (const x of [-0.2, 0.2]) M(box(0.13, 0.08, 0.03), x, 0.38, 0.655, matClaro);
+  } else if (tipo === 'comida') {
+    M(cil(0.55, 0.5, 0.18), 0, 0.09, 0); M(cil(0.6, 0.6, 0.13), 0, 0.245, 0);
+    M(box(0.95, 0.035, 0.95), 0, 0.33, 0).rotation.y = 0.78; M(cil(0.62, 0.62, 0.05), 0, 0.375, 0);
+    M(new THREE.SphereGeometry(0.57, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0.4, 0).scale.y = 0.72;
+    if (det) for (const [x, z] of [[-0.2, -0.15], [0.18, -0.2], [0, 0.05], [-0.28, 0.1], [0.3, 0.08]]) M(new THREE.SphereGeometry(0.035, 8, 6), x, 0.4 + 0.72 * Math.sqrt(0.57 * 0.57 - x * x - z * z), z, matClaro);
+  } else if (tipo === 'lazer') {
+    M(cil(0.45, 0.3, 0.7), 0, 0.35, 0);
+    for (let i = 0; i < 6; i++) M(new THREE.SphereGeometry(0.17, 12, 10), Math.cos(i * 1.05) * 0.26, 0.74, Math.sin(i * 1.05) * 0.26);
+    M(new THREE.SphereGeometry(0.2, 12, 10), 0, 0.85, 0);
+  } else if (tipo === 'saude') {
+    M(box(1, 0.66, 0.42), 0, 0.33, 0); M(new THREE.TorusGeometry(0.16, 0.04, 8, 16, Math.PI), 0, 0.66, 0);
+    if (det === 1) { M(box(0.36, 0.1, 0.03), 0, 0.36, 0.215, matClaro); M(box(0.1, 0.36, 0.03), 0, 0.36, 0.215, matClaro); }
+  } else if (tipo === 'educacao') {
+    [0, 0.22, -0.14].forEach((r, i) => { M(box(0.9, 0.2, 0.66), 0, 0.1 + i * 0.21, 0).rotation.y = r; });
+  } else {
+    for (let i = 0; i < 6; i++) M(cil(0.42, 0.42, 0.1), i % 2 ? 0.04 : -0.03, 0.05 + i * 0.115, (i % 3 - 1) * 0.03);
   }
-  partes.boca = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.024, 8, 16, Math.PI), matPreto); partes.boca.position.set(0, 0.45, 0.42);
+  return g;
+}
+// Personagem: miniatura do objeto do gasto, com olhos, sobrancelhas e boca
+function criarBoneco(cat) {
+  const g = new THREE.Group(), tipo = formaDe(cat);
+  const mat = new THREE.MeshStandardMaterial({ color: cat.cor, roughness: 0.55 });
+  const modelo = construirForma(tipo, mat, 2), dim = new THREE.Box3().setFromObject(modelo).getSize(new THREE.Vector3());
+  const k = Math.min(1 / dim.y, 1.15 / Math.max(dim.x, dim.z)); modelo.scale.setScalar(k); g.add(modelo);
+  const corpo = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  corpo.position.y = 0.5; corpo.userData.id = cat.id; g.add(corpo);   // área clicável
+  const [fy, fz, fb] = ROSTO[tipo].map(v => v * k), partes = { corpo, mat, sobr: [], bocaY: fy - 0.13 };
+  for (const lado of [-1, 1]) {
+    const olho = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), matOlho); olho.position.set(lado * 0.15, fy + 0.08, fz - 0.04);
+    const pupila = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), matPreto); pupila.position.set(lado * 0.155, fy + 0.08, fz + 0.055);
+    const sob = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.045, 0.04), matPreto); sob.position.set(lado * 0.15, fy + 0.25, fz + 0.02); sob.userData.lado = lado;
+    g.add(olho, pupila, sob); partes.sobr.push(sob);
+  }
+  partes.boca = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.024, 8, 16, Math.PI), matPreto); partes.boca.position.set(0, partes.bocaY, fb + 0.02);
   g.add(partes.boca); g.userData = partes; return g;
 }
 const poeira = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(40 * 3), 3)),
@@ -550,8 +613,8 @@ function animarBonecos(s, dt, w, h) {
     const u = b.userData, bravo = st.nivel === 'crit' || k >= 0;
     u.sobr.forEach(sb => { sb.rotation.z = bravo ? sb.userData.lado * 0.55 : st.nivel === 'warn' ? -sb.userData.lado * 0.4 : 0; });
     u.boca.rotation.z = bravo || st.nivel === 'warn' ? 0 : Math.PI; u.boca.scale.y = !bravo && st.nivel === 'warn' ? 0.25 : 1;
-    u.boca.position.y = bravo || st.nivel === 'warn' ? 0.42 : 0.5;
-    u.corpo.material.emissive.copy(corTema.crit); u.corpo.material.emissiveIntensity = bravo ? 0.25 + 0.2 * Math.sin(s * 9) : 0;
+    u.boca.position.y = u.bocaY + (bravo || st.nivel === 'warn' ? 0 : 0.08);
+    u.mat.emissive.copy(corTema.crit); u.mat.emissiveIntensity = bravo ? 0.25 + 0.2 * Math.sin(s * 9) : 0;
   });
   poeira.visible = brigando.length > 0;
   if (poeira.visible) {
@@ -572,7 +635,7 @@ function animarBonecos(s, dt, w, h) {
 const orbita = { teta: Math.PI / 2 - 0.5, fi: 0.98, raio: 16, raioAlvo: 16, raioPadrao: 16, alvo: new THREE.Vector3(0, 1.6, 0), alvoDesejado: new THREE.Vector3(0, 1.6, 0), desvioX: 0, desvioY: 0, tetaAlvo: null };
 function focar() {
   const t = tanques.get(selecionada), longe = orbita.raioPadrao * (app.clientWidth <= 760 ? 1.7 : 1);
-  if (t) { orbita.alvoDesejado.set(t.x, t.h * 0.55, t.z); orbita.raioAlvo = Math.min(longe, (7 + t.h * 1.3) * (app.clientWidth <= 760 ? 1.9 : 1));
+  if (t) { orbita.alvoDesejado.set(t.x, t.h * 0.55, t.z); orbita.raioAlvo = Math.min(longe, (6 + t.h + t.rad * 2) * (app.clientWidth <= 760 ? 1.9 : 1));
     orbita.tetaAlvo = tanques.size > 1 ? Math.atan2(t.z, t.x) : null; }
   else { orbita.alvoDesejado.set(0, 1.6, 0); orbita.raioAlvo = longe; orbita.tetaAlvo = null; }
 }
@@ -645,9 +708,8 @@ function quadro(agora) {
   tanques.forEach((t, id) => {
     const st = situacao(t.cat), pulso = 0.5 + 0.5 * Math.sin(s * (st.nivel === 'crit' ? 9 : 4) + t.fase);
     t.nivel += (st.r - t.nivel) * (1 - Math.exp(-dt * 3));
-    t.liquido.scale.y = Math.max(0.001, Math.min(t.nivel, 1.03) * t.h);
-    t.liquido.visible = t.nivel > 0.002;
-    const m = t.liquido.material;
+    t.plano.constant = 0.14 + Math.min(t.nivel, 1.01) * t.h + 0.002;   // altura até onde o objeto está "cheio"
+    const m = t.matCheio;
     cor.copy(t.corBase); if (st.nivel === 'crit') cor.lerp(corTema.crit, 0.92);
     m.color.copy(cor); m.emissive.copy(cor);
     m.emissiveIntensity = st.nivel === 'crit' ? 0.25 + 0.6 * pulso : st.nivel === 'warn' ? 0.12 + 0.3 * pulso : 0.12;
@@ -661,11 +723,11 @@ function quadro(agora) {
     t.poca.visible = t.gotas.visible = sobra > 0.005;
     if (t.poca.visible) {
       t.poca.material.color.copy(corTema.crit); t.gotas.material.color.copy(corTema.crit);
-      t.poca.scale.setScalar(1.15 + Math.min(0.7, sobra * 1.5));
+      t.poca.scale.setScalar((t.rad + 0.35) * (1.15 + Math.min(0.5, sobra * 1.2)));
       const p = t.gotas.geometry.attributes.position, topo = 0.14 + t.h;
       for (let i = 0; i < N_GOTAS; i++) {
         const a = i * 2.399, q = ((s * 0.9 + i * 0.137) % 1);
-        p.setXYZ(i, Math.cos(a) * (0.74 + q * 0.08), topo * (1 - q * q), Math.sin(a) * (0.74 + q * 0.08));
+        const rg = t.rad + 0.05 + q * 0.12; p.setXYZ(i, Math.cos(a) * rg, topo * (1 - q * q), Math.sin(a) * rg);
       }
       p.needsUpdate = true;
     }
@@ -733,7 +795,7 @@ function desenharPainel(erro = '') {
   app.classList.toggle('painel-aberto', !!selecionada);
   if (!selecionada) { p.hidden = true; p.innerHTML = ''; return; }
   // preserva o que estava sendo digitado
-  const digitado = {}; p.querySelectorAll('input').forEach(i => { digitado[i.id] = i.value; });
+  const digitado = {}; p.querySelectorAll('input, select').forEach(i => { digitado[i.id] = i.value; });
   const foco = document.activeElement && p.contains(document.activeElement) ? document.activeElement.id : null;
   const aberto = p.querySelector('details') ? p.querySelector('details').open : false;
   const idAntes = p.dataset.id;
@@ -745,6 +807,7 @@ function desenharPainel(erro = '') {
       <div class="corpo"><form id="f-nova" novalidate>
         <label>Nome<input type="text" id="n-nome" maxlength="24" placeholder="Ex.: Educação" autocomplete="off"></label>
         <label>Limite mensal (R$)<input type="text" id="n-limite" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+        <label>Formato<select id="n-forma"><option value="">Automático (pelo nome)</option>${Object.entries(FORMAS).map(([v, n]) => `<option value="${v}"${'' === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
         <label>Avisar ao chegar em <output id="n-alerta-v">80%</output><input type="range" id="n-alerta" min="50" max="100" step="5" value="80"></label>
         ${erro ? `<p class="erro">${esc(erro)}</p>` : ''}
         <button type="submit" class="btn primario bloco">Criar categoria</button>
@@ -781,6 +844,7 @@ function desenharPainel(erro = '') {
           <form id="f-config" novalidate>
             <label>Nome<input type="text" id="c-nome" maxlength="24" value="${esc(cat.nome)}" autocomplete="off"></label>
             <label>Limite mensal (R$)<input type="text" id="c-limite" inputmode="decimal" value="${cat.limite.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}" autocomplete="off"></label>
+            <label>Formato<select id="c-forma"><option value="">Automático (pelo nome)</option>${Object.entries(FORMAS).map(([v, n]) => `<option value="${v}"${cat.forma === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
             <label>Avisar ao chegar em <output id="c-alerta-v">${Math.round(cat.alerta * 100)}%</output><input type="range" id="c-alerta" min="50" max="100" step="5" value="${Math.round(cat.alerta * 100)}"></label>
             <button type="submit" class="btn bloco">Salvar</button>
             <button type="button" class="btn perigo bloco" data-acao="excluir">${confirmarExclusao ? 'Confirmar: excluir categoria e seus gastos' : 'Excluir categoria'}</button>
@@ -831,7 +895,7 @@ $('painel').addEventListener('submit', ev => {
     const cat = estado.categorias.find(c => c.id === selecionada);
     const nome = $('c-nome').value.trim(), limite = lerValor($('c-limite').value);
     if (!nome || !(limite > 0)) { aviso('Informe um nome e um limite maior que zero.', 'warn'); return; }
-    cat.nome = nome; cat.limite = limite; cat.alerta = Number($('c-alerta').value) / 100;
+    cat.nome = nome; cat.limite = limite; cat.alerta = Number($('c-alerta').value) / 100; cat.forma = $('c-forma').value || undefined;
     salvar(); montarCena(); focar(); aviso('Limite salvo.');
   }
   if (f === 'f-nova') {
@@ -839,7 +903,7 @@ $('painel').addEventListener('submit', ev => {
     if (!nome) { desenharPainel('Dê um nome à categoria.'); $('n-nome').focus(); return; }
     if (!(limite > 0)) { desenharPainel('Informe um limite maior que zero, por exemplo 500,00.'); $('n-limite').focus(); return; }
     const usadas = new Set(estado.categorias.map(c => c.cor));
-    const cat = { id: novoId(), nome, limite, alerta: Number($('n-alerta').value) / 100, cor: CORES.find(c => !usadas.has(c)) || CORES[estado.categorias.length % CORES.length] };
+    const cat = { id: novoId(), nome, limite, alerta: Number($('n-alerta').value) / 100, forma: $('n-forma').value || undefined, cor: CORES.find(c => !usadas.has(c)) || CORES[estado.categorias.length % CORES.length] };
     estado.categorias.push(cat); salvar();
     selecionada = cat.id; $('painel').dataset.id = ''; montarCena(); focar();
   }
