@@ -29,6 +29,23 @@ Abra `index.html` no navegador (não precisa de servidor nem de instalação).
 | Perto do limite (>= % de alerta) | anel âmbar pulsando, borda da tela âmbar, aviso e som |
 | Limite atingido ou estourado | objeto vermelho transbordando e tremendo, borda da tela vermelha pulsando, aviso e alarme sonoro |
 
+## O objetivo: a meta de economia
+
+O centro da praça é a sua meta (uma viagem, um carro, a casa própria, uma
+reserva de emergência...). Você informa quanto custa e em quantos meses quer
+chegar lá. O monumento da meta se enche de ouro conforme o dinheiro guardado.
+
+- **Como se guarda**: a sobra de cada mês é a soma dos limites menos os gastos.
+  Meses fechados ficam garantidos (ouro); a sobra do mês atual fica "em jogo"
+  (ouro claro) e diminui a cada gasto. Um mês no vermelho tira do cofre.
+- **Só vale mês anotado**: um mês só entra no cofre se houver gastos lançados
+  em pelo menos 8 dias dele. Deixar de anotar não ajuda a meta.
+- **Ritmo**: o painel da meta mostra quanto precisa sobrar por mês e o teto de
+  gasto por dia até o fim do mês para chegar lá no prazo.
+- **Marcos**: 25%, 50% e 75% da meta rendem +50 XP cada; alcançar a meta rende
+  +200 XP e uma conquista. Depois dá para concluir e escolher a próxima; o que
+  passou do valor já conta para ela.
+
 ## O jogo
 
 Lançar gastos rende XP, e o XP sobe de nível. Cada nível libera uma recompensa
@@ -47,7 +64,7 @@ que aparece na cena.
 | --- | --- | --- |
 | 2 Anotador | 100 | Bonés para os personagens |
 | 3 Organizado | 250 | Árvores na praça |
-| 4 Poupador | 450 | Troféu de bronze |
+| 4 Poupador | 450 | Troféu de bronze na praça |
 | 5 Estrategista | 700 | Coroas douradas |
 | 6 Mestre do orçamento | 1000 | Troféu de ouro |
 | 7 Lenda | 1400 | Fogos de artifício |
