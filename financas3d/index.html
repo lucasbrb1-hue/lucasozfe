@@ -200,6 +200,9 @@ details form { padding-top: 8px; }
 .rotulo.chefe.warn { border-color: var(--warn); }
 .rotulo.chefe .barra { height: 7px; margin-top: 5px; }
 .rotulo.chefe.crit .barra { background: rgba(255, 255, 255, .35); }
+.rotulo.mini { padding: 3px 9px 4px; border-color: var(--ouro); pointer-events: none; }
+.rotulo.mini b { font-size: 12px; }
+.rotulo.mini span { font-size: 11px; }
 .rotulo.meta { border-color: var(--ouro); border-width: 2px; }
 .rotulo.meta em { color: var(--ouro); }
 .rotulo.meta.warn em { color: var(--warn); }
@@ -347,7 +350,7 @@ function lerValor(txt) {
 /* ---------- Jogo: XP, níveis, sequência, missões e conquistas ---------- */
 const NIVEIS = [0, 100, 250, 450, 700, 1000, 1400];   // XP mínimo de cada nível (1 a 7)
 const TITULOS = ['Iniciante', 'Anotador', 'Organizado', 'Poupador', 'Estrategista', 'Mestre do orçamento', 'Lenda'];
-const PREMIOS = { 2: 'Bonés para os personagens', 3: 'Árvores na praça', 4: 'Troféu de bronze na praça', 5: 'Coroas douradas para os personagens', 6: 'Troféu de ouro', 7: 'Fogos de artifício sobre a praça' };
+const PREMIOS = { 2: 'Bonés para os personagens', 3: 'Troféu de bronze na praça', 4: 'Troféu de prata', 5: 'Coroas douradas para os personagens', 6: 'Troféu de ouro', 7: 'Estrela dourada sobre a praça' };
 const CONQUISTAS = [
   ['primeiro', 'Primeiro passo', 'Lance seu primeiro gasto', j => j.lancados >= 1],
   ['dez', 'Caderno em dia', 'Lance 10 gastos', j => j.lancados >= 10],
@@ -359,6 +362,7 @@ const CONQUISTAS = [
   ['azul', 'Tudo no azul', 'Comece o dia com todas as categorias dentro do limite', j => !!j.azul],
   ['arquiteto', 'Arquiteto', 'Crie uma categoria', j => j.criadas >= 1],
   ['chefe', 'Conheça o Chefão', 'Informe sua renda mensal', j => !!j.temRenda],
+  ['real', 'Saiu do papel', 'Confirme um sonho realizado na vida real', () => (estado.realizados || []).length >= 1],
   ['destino', 'Com destino', 'Defina uma meta de economia', j => !!j.temMeta],
   ['sonho', 'Sonho realizado', 'Alcance uma meta de economia', j => j.sonhos >= 1],
 ];
@@ -382,7 +386,7 @@ function missoes() {
     { id: 's1:' + sem, nome: 'Lance gastos em 4 dias desta semana', feito: Math.min(4, dias), meta: 4, xp: 50 },
   ];
 }
-let ganhos = [];
+let ganhos = [], faseSubiu = false;
 function ganhar(xp, motivo) { J().xp += xp; ganhos.push([xp, motivo]); }
 function conferirJogo() {
   const j = J(), atuais = missoes();
@@ -398,6 +402,12 @@ function conferirJogo() {
       if (monumento) estourar(monumento.x, 3, monumento.z); bip('nivel');
     }
   }
+  const fz = faseCalculada(); j.fase = j.fase || 1;
+  if (!estado.exemplo && fz > j.fase) {         // nova fase da vida financeira: a praça muda
+    const ganhou = []; for (let n = j.fase + 1; n <= fz; n++) { ganhar(100, `fase "${FASES[n - 1][0]}"`); ganhou.push(FASES[n - 1][2]); }
+    aviso(`Nova fase da vida financeira: ${FASES[fz - 1][0]}! A praça ganhou: ${ganhou.join(', ')}.`, 'nivel');
+    j.fase = fz; faseSubiu = true;
+  }
   for (const [id, nome, , teste] of CONQUISTAS) if (!j.conquistas[id] && teste(j)) { j.conquistas[id] = true; ganhar(30, `conquista "${nome}"`); }
 }
 function fecharGanhos() {
@@ -408,6 +418,7 @@ function fecharGanhos() {
     ganhos = [];
     $('hud').classList.remove('pulo'); void $('hud').offsetWidth; $('hud').classList.add('pulo');
   }
+  if (faseSubiu) { faseSubiu = false; salvar(); montarCena(); focar(); estourar(orbita.alvoDesejado.x, 2.5, orbita.alvoDesejado.z); bip('nivel'); }
   const nv = nivelDe(j.xp);
   if (nv > j.nivel) {
     const novos = []; for (let n = j.nivel + 1; n <= nv; n++) novos.push(PREMIOS[n]);
@@ -464,6 +475,51 @@ const gastoDoMes = m => estado.gastos.reduce((t, g) => t + (g.data.startsWith(m)
 function situacaoChefe() {
   const renda = rendaDe(mes), gasto = gastoDoMes(mes), resto = renda - gasto, limites = estado.categorias.reduce((t, c) => t + c.limite, 0);
   return { renda, gasto, resto, limites, f: renda > 0 ? Math.max(0, resto / renda) : 0, nivel: renda <= 0 ? 'ok' : resto <= 0 ? 'crit' : resto < renda * 0.2 ? 'warn' : 'ok' };
+}
+
+/* ---------- Espelho da vida real: histórico, saldo guardado e fases da vida financeira ---------- */
+// Nada aqui se compra: tudo vem do que a pessoa fez de verdade (meses fechados com gastos lançados).
+function historico() {
+  const atual = hoje().slice(0, 7), porMes = {};
+  for (const g of estado.gastos) {
+    const k = g.data.slice(0, 7); if (k > atual) continue;
+    const x = porMes[k] || (porMes[k] = { t: 0, dias: new Set() }); x.t += g.valor; x.dias.add(g.data);
+  }
+  const limites = estado.categorias.reduce((t, c) => t + c.limite, 0), entra = k => rendaDe(k) > 0 ? rendaDe(k) : limites;
+  const fechados = Object.entries(porMes).filter(([k, x]) => k < atual && x.dias.size >= DIAS_MIN)
+    .map(([k, x]) => ({ mes: k, gasto: x.t, entra: entra(k), sobra: entra(k) - x.t })).sort((a, b) => a.mes.localeCompare(b.mes));
+  const guardado = fechados.reduce((t, f) => t + f.sobra, 0), usado = (estado.realizados || []).reduce((t, r) => t + r.valor, 0);
+  return { fechados, guardado, livre: guardado - usado, azuis: fechados.filter(f => f.sobra > 0).length,
+    gastoMedio: fechados.length ? fechados.reduce((t, f) => t + f.gasto, 0) / fechados.length : limites };
+}
+// Fases medidas em meses de despesa, não em reais: valem igual para qualquer renda.
+const FASES = [
+  ['Começo', 'Anote seus gastos', ''],
+  ['Plano fechado', 'Informe a renda ao Chefão e deixe a soma dos limites dentro dela', 'Árvores na praça'],
+  ['Primeiro mês no azul', 'Feche um mês gastando menos do que entrou', 'Postes de luz'],
+  ['Três meses no azul', 'Feche três meses com sobra', 'Fonte'],
+  ['Colchão de 1 mês', 'Tenha guardado o equivalente a 1 mês das suas despesas', 'Cofre da reserva'],
+  ['Reserva de 3 meses', 'Tenha guardado o equivalente a 3 meses de despesas', 'Cofre de ouro'],
+  ['Reserva de 6 meses', 'Tenha guardado o equivalente a 6 meses de despesas', 'Fogos de artifício'],
+];
+function faseCalculada() {
+  const h = historico(), atual = hoje().slice(0, 7), limites = estado.categorias.reduce((t, c) => t + c.limite, 0);
+  const meses = h.gastoMedio > 0 && h.fechados.length ? h.livre / h.gastoMedio : 0;
+  const testes = [estado.categorias.length > 0 && rendaDe(atual) > 0 && limites <= rendaDe(atual), h.azuis >= 1, h.azuis >= 3, meses >= 1, meses >= 3, meses >= 6];
+  let f = 1; for (const ok of testes) { if (!ok) break; f++; }
+  return f;
+}
+const faseAtual = () => Math.max(J().fase || 1, faseCalculada());   // fase alcançada não se perde
+// Fechamento: cada mês encerrado rende XP pela porcentagem da renda que sobrou (10% guardados = 100 XP).
+function fecharMeses() {
+  if (estado.exemplo) return;
+  const j = J(); j.fechados = j.fechados || {};
+  for (const f of historico().fechados) if (!j.fechados[f.mes]) {
+    j.fechados[f.mes] = true;
+    const pc = f.entra > 0 ? f.sobra / f.entra * 100 : 0, nome = new Date(f.mes + '-15T12:00:00').toLocaleDateString('pt-BR', { month: 'long' });
+    if (f.sobra > 0) ganhar(Math.min(200, Math.max(10, Math.round(pc * 10))), `${nome} fechado com ${Math.round(pc)}% da renda guardada`);
+    else aviso(`${nome[0].toUpperCase() + nome.slice(1)} fechou no vermelho: faltaram ${brl0.format(-f.sobra)}.`, 'warn');
+  }
 }
 
 /* ---------- Meta de economia: o objetivo do jogo ---------- */
@@ -559,7 +615,8 @@ function aplicarTema() {
 }
 
 const tanques = new Map();   // id -> objetos 3D e estado da animação
-let decor = new THREE.Group();
+let decor = new THREE.Group(), faseCena = 1, estrela = null;
+const marcos3d = [];   // monumentos dos sonhos realizados (posição + rótulo)
 // Chefão: personagem grande ao fundo; a pilha de moedas ao lado é o que resta da renda do mês
 let chefao = null;
 const moedasVoo = [];
@@ -653,6 +710,12 @@ function animarMeta(s, dt, w, h) {
     mo.p1.constant = 0.3 + mo.f1 * mo.h + 0.002; mo.p2.constant = 0.3 + mo.f2 * mo.h + 0.002;
     mo.ouro.emissiveIntensity = mi.alcancada ? 1.2 + 0.8 * Math.sin(s * 4) : 1;
   }
+  for (const mk of marcos3d) if (mk.el) {
+    tmp.set(mk.x, 2.2, mk.z).project(camera);
+    mk.el.style.visibility = tmp.z > 1 ? 'hidden' : 'visible';
+    mk.el.style.transform = `translate(-50%,-100%) translate(${((tmp.x * 0.5 + 0.5) * w).toFixed(1)}px,${((-tmp.y * 0.5 + 0.5) * h).toFixed(1)}px)`;
+    mk.el.style.zIndex = String(Math.round((1 - tmp.z) * 10000));
+  }
   if (mo.rotulo) {
     tmp.set(mo.x, 0.3 + mo.h + 0.5, mo.z).project(camera);
     mo.rotulo.style.visibility = tmp.z > 1 ? 'hidden' : 'visible';
@@ -679,6 +742,7 @@ function estourar(x, y, z) {
   p.needsUpdate = c.needsUpdate = true; confVida = 2.6; confete.visible = true;
 }
 function animarConfete(s, dt) {
+  if (estrela && !reduzMovimento) { estrela.rotation.y = s * 0.8; estrela.position.y = 7.5 + Math.sin(s * 1.3) * 0.3; }
   if (confVida > 0) {
     confVida -= dt;
     const p = confete.geometry.attributes.position;
@@ -688,7 +752,7 @@ function animarConfete(s, dt) {
     }
     p.needsUpdate = true; confete.material.opacity = Math.min(1, Math.max(0, confVida));
     if (confVida <= 0) confete.visible = false;
-  } else if (J().nivel >= 7 && s > proximoFogo && !reduzMovimento) {
+  } else if (faseCena >= 7 && s > proximoFogo && !reduzMovimento) {
     proximoFogo = s + 5 + Math.random() * 4;
     estourar((Math.random() - 0.5) * 14, 6 + Math.random() * 3, (Math.random() - 0.5) * 14);
   }
@@ -748,23 +812,57 @@ function montarCena() {
   });
   // recompensas de nível que aparecem na praça
   scene.remove(decor); decor = new THREE.Group(); scene.add(decor);
-  if (nv >= 3) for (let i = 0; i < 9; i++) {
+  const fase = faseAtual(), Rp = raio + maiorRad + 3.2, vaga = i => 0.3 + Math.PI / 9 + i * Math.PI * 2 / 9;   // vagas entre as árvores
+  faseCena = fase; estrela = null; marcos3d.length = 0;
+  if (fase >= 2) for (let i = 0; i < 9; i++) {
     const a = 0.3 + i / 9 * Math.PI * 2, R = raio + maiorRad + 3.2, arv = new THREE.Group();
     const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.17, 0.7, 10), new THREE.MeshStandardMaterial({ color: 0x7a5a3c, roughness: 0.9 })); tronco.position.y = 0.35;
     const copa = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 12), new THREE.MeshStandardMaterial({ color: 0x3f9a5a, roughness: 0.8 })); copa.position.y = 1.45;
     arv.add(tronco, copa); arv.position.set(Math.cos(a) * R, 0, Math.sin(a) * R); arv.scale.setScalar(1 + 0.25 * Math.sin(i * 7)); decor.add(arv);
   }
-  if (nv >= 4) {
-    const metal = new THREE.MeshStandardMaterial({ color: nv >= 6 ? 0xf7c62f : 0xc77b3a, emissive: nv >= 6 ? 0x6b4a00 : 0x4a2408, metalness: 0.25, roughness: 0.3 }), tr = new THREE.Group();
+  if (nv >= 3) {
+    const metal = new THREE.MeshStandardMaterial({ color: nv >= 6 ? 0xf7c62f : nv >= 4 ? 0xc9d1da : 0xc77b3a, emissive: nv >= 6 ? 0x6b4a00 : nv >= 4 ? 0x30363d : 0x4a2408, metalness: 0.25, roughness: 0.3 }), tr = new THREE.Group();
     const P = (geo, y, m) => { const o = new THREE.Mesh(geo, m || metal); o.position.y = y; tr.add(o); return o; };
     P(new THREE.BoxGeometry(0.7, 0.18, 0.7), 0.09, matDetalhe); P(new THREE.CylinderGeometry(0.08, 0.13, 0.4, 16), 0.38); P(new THREE.CylinderGeometry(0.38, 0.14, 0.5, 24), 0.83);
     for (const x of [-0.42, 0.42]) P(new THREE.TorusGeometry(0.15, 0.035, 8, 20), 0.86).position.x = x;
-    const at = 0.3 + Math.PI / 9, Rt = raio + maiorRad + 3.2;   // entre duas árvores; o centro é da meta
+    const at = vaga(8), Rt = Rp;   // entre duas árvores; o centro é da meta
     tr.scale.setScalar(1.4); tr.position.set(Math.cos(at) * Rt, 0, Math.sin(at) * Rt); decor.add(tr);
   }
+  const em = (i, obj, R) => { obj.position.set(Math.cos(vaga(i)) * (R || Rp), 0, Math.sin(vaga(i)) * (R || Rp)); decor.add(obj); return obj; };
+  if (fase >= 3) for (let i = 0; i < 6; i++) {   // postes de luz
+    const a = i / 6 * Math.PI * 2 + 0.1, R = raio + maiorRad + 1.5, poste = new THREE.Group();
+    const haste = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 2, 10), matDetalhe); haste.position.y = 1;
+    const luz = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), new THREE.MeshStandardMaterial({ color: 0xffe9a8, emissive: 0xffc94a, emissiveIntensity: 1.2 })); luz.position.y = 2.1;
+    poste.add(haste, luz); poste.position.set(Math.cos(a) * R, 0, Math.sin(a) * R); decor.add(poste);
+  }
+  if (fase >= 4) {                               // fonte
+    const f = new THREE.Group(), pedra = new THREE.MeshStandardMaterial({ color: 0xc4ccd6, roughness: 0.8 }), agua = new THREE.MeshStandardMaterial({ color: 0x4aa8e8, roughness: 0.15, emissive: 0x124a78, emissiveIntensity: 0.4 });
+    const pc = (geo, y, m) => { const o = new THREE.Mesh(geo, m); o.position.y = y; f.add(o); };
+    pc(new THREE.CylinderGeometry(1.15, 1.25, 0.36, 36), 0.18, pedra); pc(new THREE.CylinderGeometry(1, 1, 0.06, 36), 0.37, agua);
+    pc(new THREE.CylinderGeometry(0.14, 0.2, 0.9, 14), 0.8, pedra); pc(new THREE.CylinderGeometry(0.5, 0.2, 0.14, 24), 1.3, pedra); pc(new THREE.SphereGeometry(0.26, 16, 12), 1.5, agua);
+    em(4, f);
+  }
+  if (fase >= 5) {                               // cofre da reserva (de ouro a partir da fase 6)
+    const c = new THREE.Group(), aco = new THREE.MeshStandardMaterial(fase >= 6 ? { color: 0xf7c62f, emissive: 0x6b4a00, metalness: 0.25, roughness: 0.3 } : { color: 0x8d99a8, metalness: 0.4, roughness: 0.4 });
+    const corpo = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.2), aco); corpo.position.y = 0.85;
+    const porta = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 28), matDetalhe); porta.rotation.x = Math.PI / 2; porta.position.set(0, 0.85, 0.62);
+    const trinco = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 8, 20), aco); trinco.position.set(0, 0.85, 0.68);
+    const pes = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 1.3), matDetalhe); pes.position.y = 0.05;
+    c.add(corpo, porta, trinco, pes); em(7, c).rotation.y = Math.atan2(-Math.cos(vaga(7)), -Math.sin(vaga(7)));
+  }
+  if (nv >= 7) { estrela = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), new THREE.MeshStandardMaterial({ color: 0xf7c62f, emissive: 0xb07a00, emissiveIntensity: 0.9, roughness: 0.3 })); estrela.position.set(0, 7.5, 0); decor.add(estrela); }
+  // sonhos realizados na vida real viram monumentos permanentes
+  const ouroFixo = new THREE.MeshStandardMaterial({ color: 0xf7c62f, emissive: 0x6b4a00, metalness: 0.25, roughness: 0.3 });
+  (estado.realizados || []).slice(-10).forEach((r, i) => {
+    const g = new THREE.Group(), ped = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.95, 0.22, 32), new THREE.MeshStandardMaterial({ color: 0xc4ccd6, roughness: 0.7 })); ped.position.y = 0.11;
+    const f = construirForma((META_TIPOS[r.tipo] || META_TIPOS.outro)[1], ouroFixo, 1), dim = new THREE.Box3().setFromObject(f).getSize(new THREE.Vector3());
+    f.scale.setScalar(Math.min(1.5 / dim.y, 1.5 / Math.max(dim.x, dim.z))); f.position.y = 0.22; f.rotation.y = 0.6; g.add(ped, f);
+    const v = [5, 3, 0, 2, 1][i % 5], R = Rp + Math.floor(i / 5) * 2.4; em(v, g, R);
+    marcos3d.push({ x: g.position.x, z: g.position.z, r });
+  });
   montarMeta(n <= 1 ? -(maiorRad + 4) : 0, 0);
   montarChefao(-1, -(raio + maiorRad + 3));
-  orbita.raioPadrao = raio * 2 + 10;
+  orbita.raioPadrao = raio * 2 + 12;
   aplicarTema();
   montarRotulos();
 }
@@ -1109,7 +1207,7 @@ function quadro(agora) {
   tanques.forEach((t, id) => {
     const st = situacao(t.cat), pulso = 0.5 + 0.5 * Math.sin(s * (st.nivel === 'crit' ? 9 : 4) + t.fase);
     t.nivel += (st.r - t.nivel) * (1 - Math.exp(-dt * 3));
-    t.plano.constant = 0.14 + Math.min(t.nivel, 1.01) * t.h + 0.002;   // altura até onde o objeto está "cheio"
+    t.plano.constant = t.nivel < 0.004 ? 0 : 0.14 + Math.min(t.nivel, 1.01) * t.h + 0.002;   // altura até onde o objeto está "cheio"
     const m = t.matCheio;
     cor.copy(t.corBase); if (st.nivel === 'crit') cor.lerp(corTema.crit, 0.92);
     m.color.copy(cor); m.emissive.copy(cor);
@@ -1160,6 +1258,7 @@ function montarRotulos() {
     b.type = 'button'; b.onclick = () => selecionar(id);
     cx.append(b); t.rotulo = b;
   });
+  for (const mk of marcos3d) { const d = document.createElement('div'); d.className = 'rotulo mini'; d.innerHTML = `<b>${esc(mk.r.nome)}</b><span>Realizado em ${mk.r.data.slice(0, 4)}</span>`; cx.append(d); mk.el = d; }
   if (chefao) { const b = document.createElement('button'); b.type = 'button'; b.onclick = () => selecionar('chefe'); cx.append(b); chefao.rotulo = b; }
   if (monumento) { const b = document.createElement('button'); b.type = 'button'; b.onclick = () => selecionar('meta'); cx.append(b); monumento.rotulo = b; }
   atualizar();
@@ -1267,6 +1366,7 @@ function desenharPainel(erro = '') {
         <ul class="jogo-lista">
           <li><div>Limites das categorias<small>Soma de tudo o que as categorias podem gastar</small></div><span class="st forte num">${brl0.format(ch.limites)}</span></li>
           <li><div>${folga >= 0 ? 'Sobra planejada' : 'Limites acima da renda'}<small>${folga >= 0 ? 'Renda menos limites: é o que vai para a meta se todos se comportarem' : 'Reduza limites ou a conta não fecha'}</small></div><span class="st forte num">${brl0.format(Math.abs(folga))}</span></li>
+          <li><div>Guardado até hoje<small>Soma das sobras dos meses fechados, menos os sonhos já realizados. É o retrato do que você tem, não uma moeda para gastar no jogo.</small></div><span class="st forte num">${brl0.format(historico().livre)}</span></li>
         </ul>` : '<p class="vazio">O Chefão é quem traz o dinheiro. Informe quanto entra por mês para ver quanto ainda resta, e para a meta ser calculada pela sua renda de verdade.</p>'}
         <form id="f-renda" novalidate>
           <h3>Renda mensal fixa</h3>
@@ -1304,7 +1404,7 @@ function desenharPainel(erro = '') {
             <div class="barra dupla"><div style="width:${mi.f2 * 100}%"></div><div style="width:${mi.f1 * 100}%"></div></div>
             <p>${frase}</p>
           </div>
-          ${mi.alcancada ? '<button type="button" class="btn primario bloco" data-acao="meta-concluir">Concluir e escolher nova meta</button>' : `
+          ${mi.alcancada ? '<p class="vazio">O dinheiro está guardado. Quando você usar para realizar isso de verdade, confirme aqui: a conquista vira um monumento permanente na praça.</p><button type="button" class="btn primario bloco" data-acao="meta-concluir">Já realizei na vida real</button>' : `
           <ul class="jogo-lista">
             <li><div>Em jogo neste mês<small>${rendaDe(hoje().slice(0, 7)) > 0 ? 'Renda' : 'Limites'} menos gastos. Só entra no cofre se você lançar gastos em pelo menos ${DIAS_MIN} dias do mês (até agora: ${mi.dias}).</small></div><span class="st forte num">${brl0.format(mi.previsto)}</span></li>
             <li><div>Precisa sobrar por mês<small>Para alcançar em ${mi.mesesRest} ${mi.mesesRest > 1 ? 'meses' : 'mês'}</small></div><span class="st forte num">${brl0.format(mi.porMesNec)}</span></li>
@@ -1326,19 +1426,23 @@ function desenharPainel(erro = '') {
       <div class="corpo">
         <div class="nivel-bloco">
           <strong>Nível ${nv} · ${TITULOS[nv - 1]}</strong>
+          <p>Fase da vida financeira: <b>${FASES[faseAtual() - 1][0]}</b></p>
           <span class="xpbar"><i style="width:${fim ? (j.xp - ini) / (fim - ini) * 100 : 100}%"></i></span>
           <p class="num">${fim ? `<b>${j.xp} XP</b> · faltam ${fim - j.xp} para o nível ${nv + 1}` : `<b>${j.xp} XP</b> · nível máximo`}</p>
           ${fim ? `<p>Próxima recompensa: <b>${PREMIOS[nv + 1]}</b></p>` : ''}
           <p><b>${seq} ${seq === 1 ? 'dia seguido' : 'dias seguidos'}</b> lançando gastos${j.melhorSeq ? ` (recorde: ${j.melhorSeq})` : ''}. ${j.ultimoDia === hoje() ? 'Hoje já está garantido.' : 'Lance um gasto hoje para ' + (seq ? 'manter a sequência.' : 'começar uma.')}</p>
         </div>
+        <div><h3>Fases da vida financeira</h3><ul class="jogo-lista">${FASES.map(([nome, como, premio], i) => { const fa = faseAtual(); return `<li class="${fa > i ? 'ok' : 'falta'}"><div>${nome}<small>${como}${premio ? ` · Muda a praça: ${premio}` : ''}</small></div><span class="st">${fa > i ? 'Alcançada' : fa === i ? 'Próxima' : ''}</span></li>`; }).join('')}</ul></div>
         <div><h3>Missões</h3><ul class="jogo-lista">${missoes().map(m => `<li class="${m.feito >= m.meta ? 'ok' : ''}"><div>${m.nome}<small>+${m.xp} XP</small></div><span class="st num">${m.feito >= m.meta ? 'Concluída' : `${m.feito} de ${m.meta}`}</span></li>`).join('')}</ul></div>
-        <div><h3>Recompensas</h3><ul class="jogo-lista">${Object.entries(PREMIOS).map(([n, nome]) => `<li class="${nv >= n ? 'ok' : 'falta'}"><div>${nome}<small>Nível ${n} · ${NIVEIS[n - 1]} XP</small></div><span class="st">${nv >= n ? 'Liberada' : 'Bloqueada'}</span></li>`).join('')}</ul></div>
+        <div><h3>Recompensas de nível</h3><ul class="jogo-lista">${Object.entries(PREMIOS).map(([n, nome]) => `<li class="${nv >= n ? 'ok' : 'falta'}"><div>${nome}<small>Nível ${n} · ${NIVEIS[n - 1]} XP</small></div><span class="st">${nv >= n ? 'Liberada' : 'Bloqueada'}</span></li>`).join('')}</ul></div>
         <div><h3>Conquistas</h3><ul class="jogo-lista">${CONQUISTAS.map(([id, nome, desc]) => `<li class="${j.conquistas[id] ? 'ok' : 'falta'}"><div>${nome}<small>${desc}</small></div><span class="st">${j.conquistas[id] ? 'Conquistada' : '+30 XP'}</span></li>`).join('')}</ul></div>
         <div><h3>Como ganhar XP</h3><ul class="jogo-lista">
           <li><div>Lançar um gasto<small>Vale para os 5 primeiros de cada dia</small></div><span class="st">+10 XP</span></li>
           <li><div>Primeiro gasto do dia<small>Mais um bônus que cresce com os dias seguidos</small></div><span class="st">+15 XP</span></li>
           <li><div>Abrir o dia dentro do limite<small>Por categoria que não passou do ponto de alerta</small></div><span class="st">+5 XP</span></li>
           <li><div>Aceitar a ajuda de uma categoria<small>Quando um personagem oferece parte do limite</small></div><span class="st">+20 XP</span></li>
+          <li><div>Fechar o mês com sobra<small>Pela porcentagem da renda guardada: 10% guardados valem 100 XP</small></div><span class="st">até +200 XP</span></li>
+          <li><div>Alcançar uma fase da vida financeira<small>Medida em meses de despesa guardados</small></div><span class="st">+100 XP</span></li>
         </ul></div>
       </div>`;
   } else if (selecionada === 'nova') {
@@ -1418,8 +1522,10 @@ $('painel').addEventListener('click', ev => {
   if (acao === 'meta-concluir' || acao === 'meta-excluir') {
     if (acao === 'meta-excluir' && !confirmarExclusao) { confirmarExclusao = true; desenharPainel(); return; }
     const m = estado.meta;   // o que já foi usado numa meta concluída não conta de novo na próxima
+    if (acao === 'meta-concluir') { (estado.realizados = estado.realizados || []).push({ nome: m.nome, tipo: m.tipo, valor: m.valor, data: hoje() }); ganhar(100, 'sonho realizado na vida real'); }
     estado.cofre = { desde: m.desde, base: (m.base || 0) + (acao === 'meta-concluir' ? m.valor : 0) };
     estado.meta = null; confirmarExclusao = false; $('painel').dataset.id = ''; salvar(); montarCena(); focar();
+    if (acao === 'meta-concluir') { const mk = marcos3d[marcos3d.length - 1]; if (mk) estourar(mk.x, 2.5, mk.z); bip('nivel'); aviso(`${m.nome} agora faz parte da sua praça.`, 'nivel'); fecharGanhos(); }
   }
   if (acao === 'excluir') {
     if (!confirmarExclusao) { confirmarExclusao = true; desenharPainel(); return; }
@@ -1511,7 +1617,7 @@ window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && selecionad
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', aplicarTema);
 new MutationObserver(aplicarTema).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-redimensionar(); montarCena(); focar(); bonusDoDia();
+redimensionar(); montarCena(); focar(); fecharMeses(); bonusDoDia(); fecharGanhos();
 orbita.raio = orbita.raioAlvo * 1.25;
 requestAnimationFrame(quadro);
 })();

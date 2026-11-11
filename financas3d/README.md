@@ -79,10 +79,39 @@ chegar lá. O monumento da meta se enche de ouro conforme o dinheiro guardado.
   +200 XP e uma conquista. Depois dá para concluir e escolher a próxima; o que
   passou do valor já conta para ela.
 
+## Espelho da vida real
+
+O jogo não tem moeda para gastar: a praça só muda quando algo acontece de
+verdade nas finanças da pessoa.
+
+**Fases da vida financeira.** São medidas em meses de despesa guardados, não em
+reais, então valem igual para qualquer renda. Uma fase alcançada não se perde.
+
+| Fase | Como chegar | O que muda na praça |
+| --- | --- | --- |
+| Começo | Anotar os gastos | - |
+| Plano fechado | Informar a renda e deixar a soma dos limites dentro dela | Árvores |
+| Primeiro mês no azul | Fechar um mês gastando menos do que entrou | Postes de luz |
+| Três meses no azul | Fechar três meses com sobra | Fonte |
+| Colchão de 1 mês | Ter guardado 1 mês de despesas | Cofre da reserva |
+| Reserva de 3 meses | Ter guardado 3 meses de despesas | Cofre de ouro |
+| Reserva de 6 meses | Ter guardado 6 meses de despesas | Fogos de artifício |
+
+- **Guardado até hoje** (no painel do Chefão): soma das sobras dos meses
+  fechados, menos os sonhos já realizados. Só contam meses com gastos lançados
+  em pelo menos 8 dias.
+- **Fechamento do mês**: cada mês encerrado rende XP pela porcentagem da renda
+  que sobrou (10% guardados = 100 XP, até 200).
+- **Sonhos realizados**: ao alcançar a meta, a pessoa confirma "Já realizei na
+  vida real" quando usar o dinheiro. A conquista vira um monumento dourado
+  permanente na praça, e o valor sai do guardado.
+
+A confirmação é por palavra da própria pessoa; não há verificação bancária.
+
 ## O jogo
 
-Lançar gastos rende XP, e o XP sobe de nível. Cada nível libera uma recompensa
-que aparece na cena.
+Lançar gastos rende XP, e o XP sobe de nível. Os níveis liberam enfeites
+(a praça em si muda pelas fases acima).
 
 | Como ganhar XP | Valor |
 | --- | --- |
@@ -96,11 +125,11 @@ que aparece na cena.
 | Nível | XP | Recompensa |
 | --- | --- | --- |
 | 2 Anotador | 100 | Bonés para os personagens |
-| 3 Organizado | 250 | Árvores na praça |
-| 4 Poupador | 450 | Troféu de bronze na praça |
+| 3 Organizado | 250 | Troféu de bronze na praça |
+| 4 Poupador | 450 | Troféu de prata |
 | 5 Estrategista | 700 | Coroas douradas |
 | 6 Mestre do orçamento | 1000 | Troféu de ouro |
-| 7 Lenda | 1400 | Fogos de artifício |
+| 7 Lenda | 1400 | Estrela dourada sobre a praça |
 
 O botão de nível no topo abre "Sua jornada", com a sequência de dias, as
 missões, as recompensas e as conquistas. Os dados de exemplo não rendem o
