@@ -1,0 +1,42 @@
+name: Pilula Turbo (Windows)
+
+on:
+  push:
+    branches:
+      - claude/inspiring-sagan-9rzwj2
+    paths:
+      - "pilula_turbo/**"
+      - "pilula_turbo_main.py"
+      - "tests/test_pilula_turbo.py"
+      - ".github/workflows/pilula-turbo-windows.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Roda também os testes que tocam o Windows de verdade (registro,
+      # plano de energia, prioridades de processos), sempre com ida e volta.
+      - name: Testes
+        run: python -m unittest tests.test_pilula_turbo -v
+
+      - name: Gerar executável
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          pyinstaller --noconfirm --onefile --windowed --name PilulaTurbo pilula_turbo_main.py
+
+      - name: Publicar executável como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: PilulaTurbo-windows
+          path: dist/PilulaTurbo.exe
+          if-no-files-found: error
